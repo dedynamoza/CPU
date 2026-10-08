@@ -1,0 +1,171 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: Default-deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId);
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId
+        && incoming().keys().hasAll(['displayName', 'status', 'createdAt', 'lastActiveAt'])
+        && incoming().displayName is string
+        && incoming().displayName.size() >= 3
+        && incoming().displayName.size() <= 30
+        && incoming().status in ['idle', 'searching', 'chatting']
+        && incoming().createdAt == request.time
+        && incoming().lastActiveAt == request.time;
+
+      allow update: if isSignedIn() && isValidId(userId) && request.auth.uid == userId
+        && incoming().displayName is string
+        && incoming().displayName.size() >= 3
+        && incoming().displayName.size() <= 30
+        && incoming().status in ['idle', 'searching', 'chatting']
+        && incoming().createdAt == existing().createdAt
+        && incoming().lastActiveAt == request.time;
+
+      allow delete: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+    }
+
+    // MATCH QUEUE
+    match /matchQueue/{queueId} {
+      allow get: if isSignedIn() && isValidId(queueId);
+      allow list: if isSignedIn();
+      
+      allow create: if isSignedIn() && isValidId(queueId) && request.auth.uid == queueId
+        && incoming().uid == request.auth.uid
+        && incoming().status == 'waiting'
+        && incoming().vibe in ['fun', 'talk', 'gaming', 'music', 'random']
+        && incoming().createdAt == request.time;
+
+      allow update: if isSignedIn() && isValidId(queueId)
+        && (
+          (request.auth.uid == queueId)
+          ||
+          (existing().status == 'waiting'
+            && incoming().status == 'matched'
+            && incoming().matchedSessionId is string
+            && incoming().matchedSessionId.size() <= 128
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'matchedSessionId']))
+        );
+
+      allow delete: if isSignedIn() && isValidId(queueId);
+    }
+
+    // CHAT SESSIONS
+    match /chatSessions/{sessionId} {
+      function isParticipant(sessionData) {
+        return isSignedIn() && (sessionData.userA == request.auth.uid || sessionData.userB == request.auth.uid);
+      }
+
+      allow get: if isValidId(sessionId) && isParticipant(existing());
+      allow list: if isSignedIn() && (resource.data.userA == request.auth.uid || resource.data.userB == request.auth.uid);
+
+      allow create: if isSignedIn() && isValidId(sessionId)
+        && (incoming().userA == request.auth.uid || incoming().userB == request.auth.uid)
+        && incoming().sessionId == sessionId
+        && incoming().vibe in ['fun', 'talk', 'gaming', 'music', 'random']
+        && incoming().status in ['active', 'ended']
+        && incoming().createdAt == request.time
+        && incoming().expiresAt is timestamp
+        && incoming().expiresAt <= request.time + duration.value(305, 's');
+
+      allow update: if isValidId(sessionId) && isParticipant(existing())
+        && incoming().createdAt == existing().createdAt
+        && incoming().expiresAt == existing().expiresAt
+        && incoming().userA == existing().userA
+        && incoming().userB == existing().userB
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'endedBy']);
+
+      allow delete: if isValidId(sessionId) && isParticipant(existing());
+
+      // MESSAGES SUBCOLLECTION (Disintegrating 5-minute ephemeral messages)
+      match /messages/{messageId} {
+        function getParentSession() {
+          return get(/databases/$(database)/documents/chatSessions/$(sessionId)).data;
+        }
+
+        function isParentParticipant() {
+          return isSignedIn() && (
+            getParentSession().userA == request.auth.uid ||
+            getParentSession().userB == request.auth.uid
+          );
+        }
+
+        allow get: if isValidId(messageId) && isParentParticipant();
+        allow list: if isParentParticipant();
+
+        allow create: if isValidId(messageId) && isParentParticipant()
+          && incoming().senderId == request.auth.uid
+          && incoming().senderName is string && incoming().senderName.size() <= 30
+          && incoming().type in ['text', 'image']
+          && (incoming().type == 'text' ? (incoming().text is string && incoming().text.size() <= 500) : true)
+          && incoming().createdAt == request.time
+          && incoming().expiresAt is timestamp
+          && incoming().expiresAt <= request.time + duration.value(305, 's')
+          && incoming().expiresAt >= request.time;
+
+        // Messages cannot be modified after sent - only created or deleted upon expiration
+        allow update: if false;
+
+        allow delete: if isValidId(messageId) && isParentParticipant();
+      }
+    }
+
+    // USER REPORTS
+    match /reports/{reportId} {
+      allow create: if isSignedIn() && isValidId(reportId)
+        && incoming().reporterId == request.auth.uid
+        && incoming().reportedUserId is string
+        && incoming().reportedUserId.size() <= 128
+        && incoming().sessionId is string
+        && incoming().sessionId.size() <= 128
+        && incoming().reason in ['harassment', 'sexual_content', 'hate_speech', 'spam', 'scam', 'violence', 'other']
+        && incoming().createdAt == request.time;
+      allow read, update, delete: if false;
+    }
+
+    // USER BLOCKS
+    match /blocks/{blockId} {
+      allow get: if isSignedIn() && isValidId(blockId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(blockId)
+        && incoming().userId == request.auth.uid
+        && incoming().blockedUserId is string
+        && incoming().blockedUserId.size() <= 128
+        && incoming().createdAt == request.time;
+      allow delete: if isSignedIn() && isValidId(blockId) && existing().userId == request.auth.uid;
+      allow update: if false;
+    }
+
+    // PRESENCE (Active Heartbeats for Online User Counter)
+    match /presence/{presenceId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if isSignedIn() && isValidId(presenceId) && request.auth.uid == presenceId
+        && incoming().uid == request.auth.uid
+        && incoming().lastSeen == request.time;
+      allow delete: if isSignedIn() && isValidId(presenceId) && request.auth.uid == presenceId;
+    }
+  }
+}

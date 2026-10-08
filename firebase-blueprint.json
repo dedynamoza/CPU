@@ -1,0 +1,306 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with ephemeral display name, vibe preference, and activity status",
+      "type": "object",
+      "properties": {
+        "displayName": {
+          "type": "string",
+          "description": "Randomized anonymous display name",
+          "minLength": 3,
+          "maxLength": 30
+        },
+        "avatarColor": {
+          "type": "string",
+          "description": "Hex color code for user avatar",
+          "maxLength": 7
+        },
+        "vibe": {
+          "type": "string",
+          "description": "Selected conversation vibe",
+          "enum": ["fun", "talk", "gaming", "music", "random"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Current user status",
+          "enum": ["idle", "searching", "chatting"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when user profile was created"
+        },
+        "lastActiveAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when user was last active"
+        }
+      },
+      "required": ["displayName", "status", "createdAt", "lastActiveAt"]
+    },
+    "MatchQueueItem": {
+      "title": "MatchQueueItem",
+      "description": "Entry in the random matchmaking pool",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "User ID looking for a match",
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of waiting user",
+          "maxLength": 30
+        },
+        "avatarColor": {
+          "type": "string",
+          "description": "Avatar color of waiting user",
+          "maxLength": 7
+        },
+        "vibe": {
+          "type": "string",
+          "description": "Selected vibe preference",
+          "enum": ["fun", "talk", "gaming", "music", "random"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Status in queue",
+          "enum": ["waiting", "matched", "cancelled"]
+        },
+        "matchedSessionId": {
+          "type": "string",
+          "description": "Session ID if matched",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Queue entry timestamp"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Time after which queue entry expires"
+        }
+      },
+      "required": ["uid", "displayName", "vibe", "status", "createdAt"]
+    },
+    "ChatSession": {
+      "title": "ChatSession",
+      "description": "Temporary 5-minute chat session between two anonymous users",
+      "type": "object",
+      "properties": {
+        "sessionId": {
+          "type": "string",
+          "description": "Unique session identifier",
+          "maxLength": 128
+        },
+        "userA": {
+          "type": "string",
+          "description": "UID of first participant",
+          "maxLength": 128
+        },
+        "userB": {
+          "type": "string",
+          "description": "UID of second participant",
+          "maxLength": 128
+        },
+        "userAName": {
+          "type": "string",
+          "description": "Display name of first participant",
+          "maxLength": 30
+        },
+        "userBName": {
+          "type": "string",
+          "description": "Display name of second participant",
+          "maxLength": 30
+        },
+        "vibe": {
+          "type": "string",
+          "description": "Vibe topic of conversation",
+          "enum": ["fun", "talk", "gaming", "music", "random"]
+        },
+        "status": {
+          "type": "string",
+          "description": "Session lifecycle state",
+          "enum": ["active", "ended"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Session creation timestamp"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Expiration timestamp (5 minutes after creation)"
+        },
+        "endedBy": {
+          "type": "string",
+          "description": "UID of user who skipped/ended chat",
+          "maxLength": 128
+        }
+      },
+      "required": ["sessionId", "userA", "userB", "vibe", "status", "createdAt", "expiresAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Ephemeral message in a chat session with strict 5-minute lifespan",
+      "type": "object",
+      "properties": {
+        "senderId": {
+          "type": "string",
+          "description": "UID of sender",
+          "maxLength": 128
+        },
+        "senderName": {
+          "type": "string",
+          "description": "Display name of sender",
+          "maxLength": 30
+        },
+        "type": {
+          "type": "string",
+          "description": "Message content type",
+          "enum": ["text", "image"]
+        },
+        "text": {
+          "type": "string",
+          "description": "Plain text message content",
+          "maxLength": 500
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Public or temporary download URL of image",
+          "maxLength": 2048
+        },
+        "storagePath": {
+          "type": "string",
+          "description": "Firebase Storage path for deletion",
+          "maxLength": 512
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp message was created"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp message must disintegrate (createdAt + 5m)"
+        }
+      },
+      "required": ["senderId", "senderName", "type", "createdAt", "expiresAt"]
+    },
+    "Report": {
+      "title": "Report",
+      "description": "User safety report against abusive behavior",
+      "type": "object",
+      "properties": {
+        "reporterId": {
+          "type": "string",
+          "description": "UID of user reporting",
+          "maxLength": 128
+        },
+        "reportedUserId": {
+          "type": "string",
+          "description": "UID of user reported",
+          "maxLength": 128
+        },
+        "sessionId": {
+          "type": "string",
+          "description": "Session in which infraction occurred",
+          "maxLength": 128
+        },
+        "reason": {
+          "type": "string",
+          "description": "Category of report",
+          "enum": ["harassment", "sexual_content", "hate_speech", "spam", "scam", "violence", "other"]
+        },
+        "details": {
+          "type": "string",
+          "description": "Optional notes",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of report"
+        }
+      },
+      "required": ["reporterId", "reportedUserId", "sessionId", "reason", "createdAt"]
+    },
+    "Block": {
+      "title": "Block",
+      "description": "Record of user blocking another user from future matchmaking",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of blocker",
+          "maxLength": 128
+        },
+        "blockedUserId": {
+          "type": "string",
+          "description": "UID of blocked user",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of block"
+        }
+      },
+      "required": ["userId", "blockedUserId", "createdAt"]
+    },
+    "Presence": {
+      "title": "Presence",
+      "description": "Real-time presence beacon for live online user counting",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "User ID",
+          "maxLength": 128
+        },
+        "lastSeen": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Heartbeat timestamp"
+        }
+      },
+      "required": ["uid", "lastSeen"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile collection"
+    },
+    "/matchQueue/{queueId}": {
+      "schema": "MatchQueueItem",
+      "description": "Active matchmaking queue"
+    },
+    "/chatSessions/{sessionId}": {
+      "schema": "ChatSession",
+      "description": "Ephemeral 5-minute chat sessions"
+    },
+    "/chatSessions/{sessionId}/messages/{messageId}": {
+      "schema": "Message",
+      "description": "Disintegrating ephemeral messages in a chat session"
+    },
+    "/reports/{reportId}": {
+      "schema": "Report",
+      "description": "Safety reports filed by users"
+    },
+    "/blocks/{blockId}": {
+      "schema": "Block",
+      "description": "Block relationships preventing rematches"
+    },
+    "/presence/{presenceId}": {
+      "schema": "Presence",
+      "description": "Active user heartbeat beacons"
+    }
+  }
+}
