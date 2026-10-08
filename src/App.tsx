@@ -1,15 +1,36 @@
 import React, { useEffect, useRef, useState } from 'react';
+import {
+  checkCpuRoomExists,
+  createCpuRoom,
+  getRoomCreator,
+  updateCpuRoomActivity,
+  sendCpuMessage,
+  sendCpuSignal,
+  sendPeerHeartbeat,
+  removePeerPresence,
+  deleteExpiredMessage,
+  cleanOldMessagesInRoom,
+  subscribeToCpuRoom,
+} from './services/cpuRoomService';
 
 const ALIASES = [
   'CEPU', 'BOCOR', 'SPILLER', 'KUPING', 'TUKANG_GOSIP',
   'SI_PENDIAM', 'ANON', 'BISIK', 'INTEL', 'SAKSI'
 ];
 
-const DEMO_MSGS = [
-  '(contoh) katanya ada reorg bulan depan, tim kita aman gak ya',
-  '(contoh) yang rapat sampai jam 9 malam itu sebenarnya bisa jadi email',
-  '(contoh) ada yang tau kenapa lift lantai 3 rusak lagi',
-  '(contoh) jujur aku capek jadi yang selalu disuruh ambil notulen',
+const BANG_DIRECTIONS = [
+  { x: '0vw', y: '-95vh', r: '-12deg' }, // Dari atas
+  { x: '0vw', y: '95vh', r: '12deg' }, // Dari bawah
+  { x: '-95vw', y: '0vh', r: '-20deg' }, // Dari kiri
+  { x: '95vw', y: '0vh', r: '20deg' }, // Dari kanan
+  { x: '-90vw', y: '-85vh', r: '-28deg' }, // Dari serong kiri atas
+  { x: '90vw', y: '-85vh', r: '28deg' }, // Dari serong kanan atas
+  { x: '-90vw', y: '85vh', r: '25deg' }, // Dari serong kiri bawah
+  { x: '90vw', y: '85vh', r: '-25deg' }, // Dari serong kanan bawah
+  { x: '-50vw', y: '-95vh', r: '-15deg' }, // Serong atas kiri
+  { x: '50vw', y: '95vh', r: '15deg' }, // Serong bawah kanan
+  { x: '95vw', y: '-40vh', r: '18deg' }, // Dari kanan atas
+  { x: '-95vw', y: '40vh', r: '-18deg' }, // Dari kiri bawah
 ];
 
 interface MsgItem {
@@ -74,6 +95,8 @@ export default function App() {
   const [isShaking, setIsShaking] = useState<boolean>(false);
   const [showBlackHole, setShowBlackHole] = useState<boolean>(false);
   const [showGhostFog, setShowGhostFog] = useState<boolean>(false);
+  const [homeError, setHomeError] = useState<string>('');
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -96,6 +119,8 @@ export default function App() {
     lastSendTime: number;
     bc: BroadcastChannel | null;
     ttl: number;
+    unsubFs: (() => void) | null;
+    fsHbInterval: any;
   }>({
     me: Math.random().toString(36).slice(2, 10),
     room: null,
@@ -111,6 +136,8 @@ export default function App() {
     bc: null,
     // Pesan musnah tepat dalam 30 detik (atau 10s jika #fast)
     ttl: window.location.hash.includes('fast') ? 10000 : 30 * 1000,
+    unsubFs: null,
+    fsHbInterval: null,
   });
 
   const triggerShake = () => {
@@ -207,6 +234,9 @@ export default function App() {
     });
 
     o.el.classList.add('dis');
+    if (stateRef.current.room) {
+      deleteExpiredMessage(stateRef.current.room, id).catch(() => {});
+    }
     setTimeout(() => {
       o.el.classList.add('gone');
     }, 1900);
@@ -254,24 +284,66 @@ export default function App() {
     const isBang = m.effect === 'bang';
 
     if (isBang) {
-      w.style.setProperty('--fall-dist', '90vh');
-    }
+      // Efek /bang: kata-kata bermunculan dari berbagai macam arah (atas, bawah, kiri, kanan, sudut-sudut)
+      const tokens = m.text.match(/\S+|\s+/g) || [m.text];
+      const wordTokens = tokens.filter((t) => !/^\s+$/.test(t));
 
-    let charIndex = 0;
-    for (const c of [...m.text]) {
-      const s = document.createElement('span');
-      s.className = 'ch' + (isSnake ? ' snake-char' : '');
-      s.textContent = c;
-      if (isSnake) {
-        s.style.setProperty('--snake-d', (charIndex * 0.08).toFixed(2) + 's');
-      } else if (isBang) {
-        // Efek /bang: huruf jatuh dari atas layar saat di-enter dengan gravitasi & pantulan
-        s.style.setProperty('--bang-delay', (charIndex * 0.022).toFixed(3) + 's');
-        s.style.setProperty('--bang-x', ((Math.random() - 0.5) * 32).toFixed(1) + 'px');
-        s.style.setProperty('--bang-r', ((Math.random() - 0.5) * 22).toFixed(1) + 'deg');
+      if (wordTokens.length > 1) {
+        // Banyak kata: setiap kata meluncur masuk dari arah sudut yang berbeda-beda
+        let wordIdx = 0;
+        tokens.forEach((token) => {
+          if (/^\s+$/.test(token)) {
+            const sp = document.createElement('span');
+            sp.className = 'ch bang-space';
+            sp.textContent = token;
+            bub.append(sp);
+          } else {
+            const dir = BANG_DIRECTIONS[wordIdx % BANG_DIRECTIONS.length];
+            const wSpan = document.createElement('span');
+            wSpan.className = 'bang-word';
+            wSpan.style.setProperty('--bang-x', dir.x);
+            wSpan.style.setProperty('--bang-y', dir.y);
+            wSpan.style.setProperty('--bang-r', dir.r);
+            wSpan.style.setProperty('--bang-delay', (wordIdx * 0.05).toFixed(3) + 's');
+
+            for (const ch of [...token]) {
+              const s = document.createElement('span');
+              s.className = 'ch';
+              s.textContent = ch;
+              wSpan.append(s);
+            }
+            bub.append(wSpan);
+            wordIdx++;
+          }
+        });
+      } else {
+        // Jika 1 kata atau pendek: setiap huruf meluncur dari arah berbeda-beda
+        let charIdx = 0;
+        for (const c of [...m.text]) {
+          const s = document.createElement('span');
+          s.className = 'ch bang-char';
+          s.textContent = c;
+          const dir = BANG_DIRECTIONS[charIdx % BANG_DIRECTIONS.length];
+          s.style.setProperty('--bang-x', dir.x);
+          s.style.setProperty('--bang-y', dir.y);
+          s.style.setProperty('--bang-r', dir.r);
+          s.style.setProperty('--bang-delay', (charIdx * 0.04).toFixed(3) + 's');
+          bub.append(s);
+          charIdx++;
+        }
       }
-      bub.append(s);
-      charIndex++;
+    } else {
+      let charIndex = 0;
+      for (const c of [...m.text]) {
+        const s = document.createElement('span');
+        s.className = 'ch' + (isSnake ? ' snake-char' : '');
+        s.textContent = c;
+        if (isSnake) {
+          s.style.setProperty('--snake-d', (charIndex * 0.08).toFixed(2) + 's');
+        }
+        bub.append(s);
+        charIndex++;
+      }
     }
 
     const cd = document.createElement('span');
@@ -303,28 +375,6 @@ export default function App() {
     }
   };
 
-  const demoBots = (currentRoom: string) => {
-    const S = stateRef.current;
-    [1500, 7000, 15000].forEach((ms, i) => {
-      const timer = setTimeout(() => {
-        if (S.room !== currentRoom) return;
-        const n = Date.now();
-        addMsgToDOM(
-          {
-            id: 'd' + n + i,
-            alias: 'BOT_' + (10 + i),
-            text: DEMO_MSGS[(Math.random() * DEMO_MSGS.length) | 0],
-            c: n,
-            e: n + S.ttl,
-            effect: 'normal',
-          },
-          false
-        );
-      }, ms);
-      S.timers.push(timer);
-    });
-  };
-
   const joinRoom = (code: string, creator = false) => {
     const cleaned = cleanCode(code);
     if (!cleaned) {
@@ -354,7 +404,7 @@ export default function App() {
           (creator ? ' [PEMBUAT RUANG / HOST]' : '') +
           '. Tidak ada riwayat: kamu hanya melihat pesan yang masuk sekarang. ***'
       );
-      addSysMsg('! Perintah: /shake <pesan>, /snake <pesan>, /bang <pesan>, /enigma <pesan>, /ghost <pesan>' + (creator ? ', /blackhole' : ''));
+      addSysMsg('!' + (creator ? '' : ''));
       if (inputRef.current) inputRef.current.focus();
 
       sendBroadcast({ t: 'hi' });
@@ -365,18 +415,73 @@ export default function App() {
       S.timers.push(hb);
       S.tickInterval = setInterval(tick, 200);
 
-      if (!S.bc) {
-        addSysMsg('Browser ini tidak mendukung sinkron antar-tab.');
-      } else {
-        addSysMsg('Demo: ruang ini hanya terhubung dengan tab lain di browser yang sama.');
-      }
-      demoBots(cleaned);
+      // --- KONEKSI FIREBASE REALTIME ---
+      updateCpuRoomActivity(cleaned).catch(() => {});
+      cleanOldMessagesInRoom(cleaned).catch(() => {});
+
+      // Heartbeat presence ke Firebase tiap 3.5 detik
+      sendPeerHeartbeat(cleaned, S.me, S.alias).catch(() => {});
+      const fsHb = setInterval(() => {
+        if (stateRef.current.room === cleaned) {
+          sendPeerHeartbeat(cleaned, S.me, S.alias).catch(() => {});
+        }
+      }, 3500);
+      S.fsHbInterval = fsHb;
+
+      // Berlangganan real-time Firestore untuk pesan, efek/sinyal, dan jumlah pengguna aktif
+      S.unsubFs = subscribeToCpuRoom(
+        cleaned,
+        S.me,
+        (incomingMsg, isMine) => {
+          if (!isMine) {
+            addMsgToDOM(
+              {
+                id: incomingMsg.id,
+                alias: incomingMsg.alias,
+                text: incomingMsg.text,
+                c: incomingMsg.c,
+                e: incomingMsg.e,
+                effect: incomingMsg.effect,
+              },
+              false
+            );
+          }
+        },
+        (sig) => {
+          if (sig.type === 'shake') {
+            triggerShake();
+            showToastMsg('⚡ Seseorang mengguncang layar! (/SHAKE)');
+          } else if (sig.type === 'blackhole') {
+            triggerBlackHoleSuction();
+            showToastMsg('🕳️ LUBANG HITAM AKTIF: Semua pesan tersedot!');
+          } else if (sig.type === 'ghost') {
+            triggerGhostFog();
+            showToastMsg('🌫️ Kabut halus menyelimuti monitor (/GHOST)');
+          }
+        },
+        (onlineCount) => {
+          setPeerCount(onlineCount);
+        }
+      );
+
+      addSysMsg('● Terhubung.');
     }, 50);
   };
 
   const leaveRoom = (silent = false) => {
     const S = stateRef.current;
-    if (S.room) sendBroadcast({ t: 'bye' });
+    if (S.unsubFs) {
+      S.unsubFs();
+      S.unsubFs = null;
+    }
+    if (S.fsHbInterval) {
+      clearInterval(S.fsHbInterval);
+      S.fsHbInterval = null;
+    }
+    if (S.room) {
+      removePeerPresence(S.room, S.me).catch(() => {});
+      sendBroadcast({ t: 'bye' });
+    }
     S.timers.forEach((t) => {
       clearInterval(t);
       clearTimeout(t);
@@ -394,6 +499,8 @@ export default function App() {
     S.peers.clear();
     setShowBlackHole(false);
     setShowGhostFog(false);
+    setHomeError('');
+    setIsLoading(false);
     if (listRef.current) listRef.current.replaceChildren();
     if (!silent) setScreen('home');
   };
@@ -472,6 +579,23 @@ export default function App() {
     S.lastSendTime = now;
     setInputMsg('');
 
+    // Helper untuk dispatch pesan ke layar, broadcast lokal, dan Firebase Firestore
+    const dispatchMessage = (m: MsgItem) => {
+      addMsgToDOM(m, true);
+      sendBroadcast({ t: 'msg', m });
+      if (S.room) {
+        sendCpuMessage(S.room, {
+          id: m.id,
+          senderId: S.me,
+          alias: m.alias,
+          text: m.text,
+          effect: m.effect || 'normal',
+          c: m.c,
+          e: m.e,
+        }).catch(() => {});
+      }
+    };
+
     // 1. CEK COMMAND /blackhole (Hanya pembuat ruangan yang bisa, maks 3x)
     if (rawInput === '/blackhole' || rawInput.startsWith('/blackhole ')) {
       if (!S.isHost) {
@@ -485,6 +609,7 @@ export default function App() {
       S.blackholeUses++;
       triggerBlackHoleSuction();
       sendBroadcast({ t: 'blackhole' });
+      if (S.room) sendCpuSignal(S.room, 'blackhole', S.me).catch(() => {});
       showToastMsg(`🕳️ LUBANG HITAM AKTIF! (Sisa: ${3 - S.blackholeUses}x)`);
       return;
     }
@@ -505,6 +630,7 @@ export default function App() {
       }
       triggerGhostFog();
       sendBroadcast({ t: 'ghost' });
+      if (S.room) sendCpuSignal(S.room, 'ghost', S.me).catch(() => {});
 
       // Kirim pesan yang menyertai /ghost
       const m: MsgItem = {
@@ -515,8 +641,7 @@ export default function App() {
         e: now + S.ttl,
         effect: 'normal',
       };
-      addMsgToDOM(m, true);
-      sendBroadcast({ t: 'msg', m });
+      dispatchMessage(m);
       return;
     }
 
@@ -529,6 +654,7 @@ export default function App() {
       }
       triggerShake();
       sendBroadcast({ t: 'shake' });
+      if (S.room) sendCpuSignal(S.room, 'shake', S.me).catch(() => {});
 
       const m: MsgItem = {
         id: S.me + now + Math.random().toString(36).slice(2, 5),
@@ -538,8 +664,7 @@ export default function App() {
         e: now + S.ttl,
         effect: 'normal',
       };
-      addMsgToDOM(m, true);
-      sendBroadcast({ t: 'msg', m });
+      dispatchMessage(m);
       return;
     }
 
@@ -558,8 +683,7 @@ export default function App() {
         e: now + S.ttl,
         effect: 'snake',
       };
-      addMsgToDOM(m, true);
-      sendBroadcast({ t: 'msg', m });
+      dispatchMessage(m);
       return;
     }
 
@@ -578,8 +702,7 @@ export default function App() {
         e: now + S.ttl,
         effect: 'bang',
       };
-      addMsgToDOM(m, true);
-      sendBroadcast({ t: 'msg', m });
+      dispatchMessage(m);
       return;
     }
 
@@ -599,8 +722,7 @@ export default function App() {
         e: now + S.ttl,
         effect: 'normal',
       };
-      addMsgToDOM(m, true);
-      sendBroadcast({ t: 'msg', m });
+      dispatchMessage(m);
       return;
     }
 
@@ -613,8 +735,7 @@ export default function App() {
       e: now + S.ttl,
       effect: 'normal',
     };
-    addMsgToDOM(m, true);
-    sendBroadcast({ t: 'msg', m });
+    dispatchMessage(m);
   };
 
   const handleCopyRoom = () => {
@@ -635,11 +756,79 @@ export default function App() {
     r.dataset.ph = r.dataset.ph === 'amber' ? '' : 'amber';
   };
 
-  const handleCreateRandomRoom = () => {
-    const c = Math.random().toString(36).slice(2, 8);
-    setCodeInputValue(c);
-    // Masuk sebagai pembuat ruangan (Host)
-    joinRoom(c, true);
+  const handleJoinExistingRoom = async () => {
+    const raw = codeInputValue.trim();
+    const cleaned = cleanCode(raw);
+    if (!cleaned) {
+      setHomeError('[!] ERROR: Masukkan kode ruang terlebih dahulu!');
+      showToastMsg('Isi kode ruang dulu');
+      return;
+    }
+    setHomeError('');
+    setIsLoading(true);
+
+    try {
+      const exists = await checkCpuRoomExists(cleaned);
+      if (!exists) {
+        setHomeError(
+          `[!] ERROR: Ruangan "${cleaned.toUpperCase()}" tidak ditemukan! Pastikan kode ruangan benar atau buat ruangan baru terlebih dahulu.`
+        );
+        showToastMsg(`Ruang "${cleaned.toUpperCase()}" tidak ditemukan!`);
+        setIsLoading(false);
+        return;
+      }
+
+      // Ruang ditemukan! Periksa apakah pengguna saat ini adalah pembuat ruangan
+      const creatorId = await getRoomCreator(cleaned);
+      const isCreator = creatorId === stateRef.current.me;
+      setIsLoading(false);
+      joinRoom(cleaned, isCreator);
+    } catch (err: any) {
+      console.error('Join room error:', err);
+      setHomeError(`[!] KESALAHAN SERVER: ${err?.message || 'Gagal memeriksa ruangan'}`);
+      showToastMsg('Gagal memeriksa status ruangan');
+      setIsLoading(false);
+    }
+  };
+
+  const handleCreateNewRoom = async () => {
+    setHomeError('');
+    setIsLoading(true);
+
+    try {
+      let codeToUse = cleanCode(codeInputValue.trim());
+      // Jika kolom input kosong, buat kode acak 6 karakter unik
+      if (!codeToUse) {
+        codeToUse = Math.random().toString(36).slice(2, 8);
+        setCodeInputValue(codeToUse);
+      }
+
+      const res = await createCpuRoom(codeToUse, stateRef.current.me);
+      if (res.alreadyExists) {
+        setHomeError(
+          `[!] PERINGATAN: Ruangan "${codeToUse.toUpperCase()}" sudah pernah dibuat. Klik [ MASUK ] untuk bergabung.`
+        );
+        showToastMsg(`Ruang "${codeToUse.toUpperCase()}" sudah ada! Klik MASUK.`);
+        setIsLoading(false);
+        return;
+      }
+
+      if (!res.success) {
+        setHomeError(`[!] ERROR: ${res.error || 'Gagal membuat ruangan di server.'}`);
+        showToastMsg('Gagal membuat ruangan');
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(false);
+      // Masuk sebagai Host/Pembuat Ruang (bisa /blackhole 3x & /ghost tanpa batas)
+      joinRoom(codeToUse, true);
+    } catch (err: any) {
+      console.error('Create room error:', err);
+      setHomeError(`[!] KESALAHAN: ${err?.message || 'Gagal membuat ruangan'}`);
+      showToastMsg('Gagal membuat ruangan');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -678,19 +867,39 @@ export default function App() {
               autoCapitalize="off"
               autoComplete="off"
               value={codeInputValue}
-              onChange={(e) => setCodeInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') joinRoom(codeInputValue, false);
+              onChange={(e) => {
+                setCodeInputValue(e.target.value);
+                if (homeError) setHomeError('');
               }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleJoinExistingRoom();
+              }}
+              disabled={isLoading}
             />
           </div>
-          <button className="btn big" id="join" onClick={() => joinRoom(codeInputValue, false)}>
-            [ MASUK ]
+          <button
+            className="btn big"
+            id="join"
+            onClick={handleJoinExistingRoom}
+            disabled={isLoading}
+          >
+            {isLoading ? '[ MEMERIKSA... ]' : '[ MASUK ]'}
           </button>
-          <button className="btn" id="rnd" onClick={handleCreateRandomRoom}>
+          <button
+            className="btn"
+            id="rnd"
+            onClick={handleCreateNewRoom}
+            disabled={isLoading}
+          >
             [ BUAT RUANG BARU ]
           </button>
         </div>
+
+        {homeError && (
+          <div className="msg-error" role="alert">
+            {homeError}
+          </div>
+        )}
 
         <div className="foot dim">
           C:\CPU&gt; <span className="cur"></span>

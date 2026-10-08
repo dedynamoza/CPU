@@ -271,6 +271,118 @@
         }
       },
       "required": ["uid", "lastSeen"]
+    },
+    "CpuRoom": {
+      "title": "CpuRoom",
+      "description": "Anonymous leak/spill room identified by a code",
+      "type": "object",
+      "properties": {
+        "roomId": {
+          "type": "string",
+          "description": "Room code or identifier",
+          "maxLength": 32
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "lastActivity": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last activity timestamp"
+        }
+      },
+      "required": ["roomId", "createdAt", "lastActivity"]
+    },
+    "CpuMessage": {
+      "title": "CpuMessage",
+      "description": "Ephemeral 30-second dissolving message in a CPU room",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique message ID",
+          "maxLength": 64
+        },
+        "senderId": {
+          "type": "string",
+          "description": "Ephemeral random sender ID",
+          "maxLength": 64
+        },
+        "alias": {
+          "type": "string",
+          "description": "Sender retro alias",
+          "maxLength": 32
+        },
+        "text": {
+          "type": "string",
+          "description": "Message text content",
+          "maxLength": 300
+        },
+        "effect": {
+          "type": "string",
+          "description": "Visual effect of message",
+          "enum": ["normal", "snake", "bang"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Expiration timestamp (30s)"
+        }
+      },
+      "required": ["id", "senderId", "alias", "text", "effect", "createdAt", "expiresAt"]
+    },
+    "CpuSignal": {
+      "title": "CpuSignal",
+      "description": "Real-time room signals such as shake, blackhole, or ghost",
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Signal type",
+          "enum": ["shake", "blackhole", "ghost"]
+        },
+        "senderId": {
+          "type": "string",
+          "description": "Sender identifier",
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["type", "senderId", "createdAt"]
+    },
+    "CpuPeer": {
+      "title": "CpuPeer",
+      "description": "Live peer presence inside a CPU room",
+      "type": "object",
+      "properties": {
+        "peerId": {
+          "type": "string",
+          "description": "Peer random ID",
+          "maxLength": 64
+        },
+        "alias": {
+          "type": "string",
+          "description": "Peer alias",
+          "maxLength": 32
+        },
+        "lastSeen": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Heartbeat timestamp"
+        }
+      },
+      "required": ["peerId", "alias", "lastSeen"]
     }
   },
   "firestore": {
@@ -301,6 +413,22 @@
     "/presence/{presenceId}": {
       "schema": "Presence",
       "description": "Active user heartbeat beacons"
+    },
+    "/cpuRooms/{roomId}": {
+      "schema": "CpuRoom",
+      "description": "Anonymous leak/spill room"
+    },
+    "/cpuRooms/{roomId}/messages/{messageId}": {
+      "schema": "CpuMessage",
+      "description": "Ephemeral 30-second messages in room"
+    },
+    "/cpuRooms/{roomId}/signals/{signalId}": {
+      "schema": "CpuSignal",
+      "description": "Room-wide visual signals (shake, blackhole, ghost)"
+    },
+    "/cpuRooms/{roomId}/peers/{peerId}": {
+      "schema": "CpuPeer",
+      "description": "Online peers in CPU room"
     }
   }
 }

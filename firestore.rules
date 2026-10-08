@@ -167,5 +167,49 @@ service cloud.firestore {
         && incoming().lastSeen == request.time;
       allow delete: if isSignedIn() && isValidId(presenceId) && request.auth.uid == presenceId;
     }
+
+    // CPU DOS ANONYMOUS CHAT ROOMS (NO LOGIN REQUIRED)
+    match /cpuRooms/{roomId} {
+      allow get: if isValidId(roomId);
+      allow list: if false;
+      allow create, update: if isValidId(roomId)
+        && incoming().roomId is string && incoming().roomId.size() <= 32
+        && incoming().createdAt is timestamp
+        && incoming().lastActivity is timestamp;
+      allow delete: if isValidId(roomId);
+
+      match /messages/{messageId} {
+        allow get, list: if isValidId(roomId);
+        allow create: if isValidId(roomId) && isValidId(messageId)
+          && incoming().id is string && incoming().id.size() <= 64
+          && incoming().senderId is string && incoming().senderId.size() <= 64
+          && incoming().alias is string && incoming().alias.size() <= 32
+          && incoming().text is string && incoming().text.size() <= 300
+          && incoming().effect in ['normal', 'snake', 'bang']
+          && incoming().createdAt is timestamp
+          && incoming().expiresAt is timestamp;
+        allow update: if false;
+        allow delete: if isValidId(roomId) && isValidId(messageId);
+      }
+
+      match /signals/{signalId} {
+        allow get, list: if isValidId(roomId);
+        allow create: if isValidId(roomId) && isValidId(signalId)
+          && incoming().type in ['shake', 'blackhole', 'ghost']
+          && incoming().senderId is string && incoming().senderId.size() <= 64
+          && incoming().createdAt is timestamp;
+        allow update: if false;
+        allow delete: if isValidId(roomId) && isValidId(signalId);
+      }
+
+      match /peers/{peerId} {
+        allow get, list: if isValidId(roomId);
+        allow create, update: if isValidId(roomId) && isValidId(peerId)
+          && incoming().peerId is string && incoming().peerId.size() <= 64
+          && incoming().alias is string && incoming().alias.size() <= 32
+          && incoming().lastSeen is timestamp;
+        allow delete: if isValidId(roomId) && isValidId(peerId);
+      }
+    }
   }
 }

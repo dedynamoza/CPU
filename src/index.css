@@ -292,6 +292,18 @@ pre {
   padding-top: 14px;
 }
 
+.msg-error {
+  border: 2px dashed var(--warn);
+  background: rgba(255, 85, 85, 0.08);
+  color: var(--warn);
+  padding: 8px 12px;
+  font-size: 18px;
+  text-shadow: 0 0 6px var(--warn);
+  margin-top: 12px;
+  line-height: 1.3;
+  max-width: 600px;
+}
+
 /* chat */
 .win {
   flex: 1;
@@ -413,48 +425,80 @@ pre {
   will-change: transform;
 }
 
-/* efek /bang: saat pesan di-enter, huruf jatuh dari atas layar ke bawah dengan efek gravitasi & pantulan */
-@keyframes fallFromSky {
+/* efek /bang: kata-kata bermunculan dari berbagai macam arah (atas, bawah, kiri, kanan, sudut) dengan gaya gravitasi & pantulan */
+@keyframes bangFlyIn {
   0% {
-    transform: translate3d(var(--bang-x, 0px), calc(-1 * var(--fall-dist, 90vh)), 0) rotate(var(--bang-r, 20deg));
+    transform: translate3d(var(--bang-x, 0px), var(--bang-y, -90vh), 0) rotate(var(--bang-r, 20deg)) scale(1.35);
     opacity: 0;
   }
-  15% {
+  20% {
     opacity: 1;
   }
   70% {
-    transform: translate3d(calc(var(--bang-x, 0px) * 0.25), 14px, 0) rotate(calc(var(--bang-r, 20deg) * -0.3));
+    transform: translate3d(calc(var(--bang-x, 0px) * -0.06), calc(var(--bang-y, -90vh) * -0.06), 0) rotate(calc(var(--bang-r, 20deg) * -0.2)) scale(1.06);
   }
-  84% {
-    transform: translate3d(0, -6px, 0) rotate(2deg);
+  85% {
+    transform: translate3d(calc(var(--bang-x, 0px) * 0.02), calc(var(--bang-y, -90vh) * 0.02), 0) rotate(1deg) scale(0.98);
   }
-  94% {
-    transform: translate3d(0, 2px, 0) rotate(-1deg);
+  95% {
+    transform: translate3d(0, -1px, 0) scale(1.01);
   }
   100% {
-    transform: translate3d(0, 0, 0) rotate(0deg);
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
     opacity: 1;
   }
 }
 
 .m.bang .who {
   display: inline-block;
-  animation: fallFromSky 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --bang-x: -75vw;
+  --bang-y: -75vh;
+  --bang-r: -15deg;
+  animation: bangFlyIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
   will-change: transform, opacity;
 }
 
 .m.bang .cd {
   display: inline-block;
-  animation: fallFromSky 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: 0.12s;
+  --bang-x: 75vw;
+  --bang-y: 75vh;
+  --bang-r: 15deg;
+  animation: bangFlyIn 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.1s;
   will-change: transform, opacity;
 }
 
-.m.bang .ch {
+.m.bang .bang-word {
   display: inline-block;
-  animation: fallFromSky 0.75s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: bangFlyIn 0.72s cubic-bezier(0.22, 1, 0.36, 1) both;
   animation-delay: var(--bang-delay, 0s);
   will-change: transform, opacity;
+  white-space: pre;
+}
+
+.m.bang .bang-space {
+  display: inline;
+  white-space: pre;
+}
+
+.m.bang .bang-char {
+  display: inline-block;
+  animation: bangFlyIn 0.72s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--bang-delay, 0s);
+  will-change: transform, opacity;
+}
+
+/* Penyesuaian saat pesan kadaluarsa atau tersedot lubang hitam */
+.m.dis .bang-word {
+  animation: none !important;
+  transform: none !important;
+}
+
+.m.sucking-hole .bang-word,
+.m.sucking-hole .bang-char,
+.m.sucking-hole .who,
+.m.sucking-hole .cd {
+  animation: none !important;
 }
 
 /* musnah standar & /bang saat waktu habis: huruf tertiup angin, melayang naik lalu memudar */
