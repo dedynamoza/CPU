@@ -1,6 +1,6 @@
 {
   "name": "CPU",
-  "description": "Let's Speak Up!",
+  "description": "Let's Gibah!",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

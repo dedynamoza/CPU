@@ -183,7 +183,7 @@ export default function App() {
       if (listRef.current) listRef.current.replaceChildren();
       stateRef.current.msgs.clear();
       setShowBlackHole(false);
-      addSysMsg('*** RUANG DISAPU BERSIH: SEMUA PESAN LENYAP KE LUBANG HITAM ***');
+      addSysMsg('*** RUANG DISAPU BERSIH: SEMUA PESAN LENYAP KE NERAKA JAHANAM! ***');
     }, 1900);
   };
 
@@ -938,7 +938,7 @@ export default function App() {
             </button>
           </div>
           <div className="ban dim">
-            ! Tulis tanpa menyebut nama &amp; data pribadi orang. Pesan musnah 30 detik setelah dikirim.
+            ! Tulis tanpa menyebut nama &amp; data pribadi orang. Pesan musnah 30 detik setelah dikirim. Tetap Beretika, Jangan Fitnah Dosa!! Masuk Neraka
           </div>
           <div id="list" ref={listRef} aria-live="polite"></div>
           <form id="f" autoComplete="off" onSubmit={handleFormSubmit}>
