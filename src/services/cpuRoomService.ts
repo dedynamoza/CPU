@@ -47,6 +47,16 @@ function handleFsError(err: unknown, op: string, path: string) {
   console.warn(`[GHIBAH Firestore ${op}] ${path}:`, err);
 }
 
+// Client-side rate limiting to prevent spam and preserve Firestore write quota
+let lastMessageTime = 0;
+let lastSignalTime = 0;
+let lastHeartbeatTime = 0;
+const messageTimestamps: number[] = [];
+const MAX_MESSAGES_PER_MINUTE = 40;
+const MIN_MESSAGE_INTERVAL_MS = 300;
+const MIN_SIGNAL_INTERVAL_MS = 2500;
+const MIN_HEARTBEAT_INTERVAL_MS = 4000;
+
 /**
  * Check if a room already exists and is actively used in Firestore (exact case-sensitive match).
  * Jika ruangan kosong tanpa orang aktif dan dibuat lebih dari 45 detik lalu, ruangan dianggap usang/tutup.
@@ -227,8 +237,28 @@ export async function touchCpuRoom(roomId: string): Promise<void> {
  */
 export async function sendCpuMessage(roomId: string, msg: CpuMsgData): Promise<void> {
   const cleanId = sanitizeRoomCode(roomId.trim());
-  const msgDocRef = doc(db, 'cpuRooms', cleanId, 'messages', msg.id);
+  if (!cleanId) return;
+
   const now = Date.now();
+  // Anti-spam interval check
+  if (now - lastMessageTime < MIN_MESSAGE_INTERVAL_MS) {
+    console.warn('[GHIBAH Quota Guard] Message throttled: sending too fast.');
+    return;
+  }
+
+  // Sliding window rate limiter (max messages per minute)
+  while (messageTimestamps.length > 0 && messageTimestamps[0] < now - 60000) {
+    messageTimestamps.shift();
+  }
+  if (messageTimestamps.length >= MAX_MESSAGES_PER_MINUTE) {
+    console.warn('[GHIBAH Quota Guard] Message rate limit reached: please slow down.');
+    return;
+  }
+
+  lastMessageTime = now;
+  messageTimestamps.push(now);
+
+  const msgDocRef = doc(db, 'cpuRooms', cleanId, 'messages', msg.id);
   const expireDate = new Date(msg.e || now + 30000);
 
   try {
@@ -251,6 +281,15 @@ export async function sendCpuMessage(roomId: string, msg: CpuMsgData): Promise<v
  */
 export async function sendCpuSignal(roomId: string, type: SignalType, senderId: string): Promise<void> {
   const cleanId = sanitizeRoomCode(roomId.trim());
+  if (!cleanId) return;
+
+  const now = Date.now();
+  if (now - lastSignalTime < MIN_SIGNAL_INTERVAL_MS) {
+    console.warn('[GHIBAH Quota Guard] Signal throttled: sending too fast.');
+    return;
+  }
+  lastSignalTime = now;
+
   const sigId = 'sig_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
   const sigRef = doc(db, 'cpuRooms', cleanId, 'signals', sigId);
 
@@ -275,6 +314,14 @@ export async function sendPeerHeartbeat(
   joinedAt?: number
 ): Promise<void> {
   const cleanId = sanitizeRoomCode(roomId.trim());
+  if (!cleanId || !peerId) return;
+
+  const now = Date.now();
+  if (now - lastHeartbeatTime < MIN_HEARTBEAT_INTERVAL_MS) {
+    return; // Skip heartbeat if called too frequently
+  }
+  lastHeartbeatTime = now;
+
   const peerRef = doc(db, 'cpuRooms', cleanId, 'peers', peerId);
 
   try {

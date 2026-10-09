@@ -172,10 +172,27 @@ service cloud.firestore {
     match /cpuRooms/{roomId} {
       allow get: if isValidId(roomId);
       allow list: if false;
-      allow create, update: if isValidId(roomId)
-        && incoming().roomId is string && incoming().roomId.size() <= 32
+      allow create: if isValidId(roomId)
+        && incoming().roomId == roomId
+        && incoming().roomId.size() <= 32
         && incoming().createdAt is timestamp
-        && incoming().lastActivity is timestamp;
+        && incoming().lastActivity is timestamp
+        && (!('createdBy' in incoming()) || (incoming().createdBy is string && incoming().createdBy.size() <= 64))
+        && (!('currentHost' in incoming()) || (incoming().currentHost is string && incoming().currentHost.size() <= 64));
+      allow update: if isValidId(roomId)
+        && incoming().roomId == existing().roomId
+        && incoming().lastActivity is timestamp
+        && (
+          // Update host & activity
+          (incoming().diff(existing()).affectedKeys().hasOnly(['currentHost', 'lastActivity'])
+           && incoming().currentHost is string && incoming().currentHost.size() <= 64)
+          ||
+          // Update activity only
+          incoming().diff(existing()).affectedKeys().hasOnly(['lastActivity'])
+          ||
+          // Touch room (refresh)
+          incoming().diff(existing()).affectedKeys().hasOnly(['roomId', 'createdAt', 'lastActivity'])
+        );
       allow delete: if isValidId(roomId);
 
       match /messages/{messageId} {
@@ -187,9 +204,12 @@ service cloud.firestore {
           && incoming().text is string && incoming().text.size() <= 300
           && incoming().effect in ['normal', 'snake', 'bang']
           && incoming().createdAt is timestamp
-          && incoming().expiresAt is timestamp;
+          && incoming().expiresAt is timestamp
+          && incoming().expiresAt >= request.time;
         allow update: if false;
-        allow delete: if isValidId(roomId) && isValidId(messageId);
+        // Hanya izinkan hapus jika pesan sudah kedaluwarsa (mencegah penyerang menghapus pesan aktif orang lain)
+        allow delete: if isValidId(roomId) && isValidId(messageId)
+          && existing().expiresAt <= request.time + duration.value(10, 's');
       }
 
       match /signals/{signalId} {
@@ -204,10 +224,20 @@ service cloud.firestore {
 
       match /peers/{peerId} {
         allow get, list: if isValidId(roomId);
-        allow create, update: if isValidId(roomId) && isValidId(peerId)
-          && incoming().peerId is string && incoming().peerId.size() <= 64
+        allow create: if isValidId(roomId) && isValidId(peerId)
+          && incoming().peerId == peerId
+          && incoming().peerId.size() <= 64
           && incoming().alias is string && incoming().alias.size() <= 32
-          && incoming().lastSeen is timestamp;
+          && incoming().lastSeen is timestamp
+          && incoming().joinedAt is number
+          && incoming().joinedAt <= request.time.toMillis() + 120000
+          && incoming().joinedAt >= request.time.toMillis() - 120000;
+        allow update: if isValidId(roomId) && isValidId(peerId)
+          && incoming().peerId == existing().peerId
+          && incoming().alias is string && incoming().alias.size() <= 32
+          && incoming().lastSeen is timestamp
+          // Mencegah pemalsuan timestamp joinedAt untuk membajak status Host
+          && (!('joinedAt' in existing()) || incoming().joinedAt == existing().joinedAt);
         allow delete: if isValidId(roomId) && isValidId(peerId);
       }
     }
