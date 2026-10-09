@@ -556,7 +556,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Efek glitch layar selama 2 detik setiap 5 menit (300.000 ms)
+    // Efek glitch layar selama 2 detik setiap 30 menit (300.000 ms)
     const GLITCH_INTERVAL = 5 * 60 * 1000;
     const GLITCH_DURATION = 2000;
 
