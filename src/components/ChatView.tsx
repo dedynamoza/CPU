@@ -207,7 +207,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
         {messages.length === 0 ? (
           <div className="h-44 flex flex-col items-center justify-center text-center opacity-60 font-mono text-xs space-y-1">
             <p>&gt; BELUM ADA PESAN.</p>
-            <p>&gt; KETIK DAN BOCORKAN RAHASIA DI BAWAH INI... 👇</p>
+            <p>&gt; KETIK DIBAWAH INI... 👇</p>
           </div>
         ) : (
           messages.map((msg) => (

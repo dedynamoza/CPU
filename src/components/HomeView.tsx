@@ -46,7 +46,7 @@ export const HomeView: React.FC<HomeViewProps> = ({ onStartMatching }) => {
           </div>
 
           <div className="text-center text-xs text-[#72ff59] opacity-80 mb-6">
-            Bocorkan rahasia di tempat kerja atau komunitas tanpa jejak.
+            Gibah Time .
             <br />
             Semua pesan musnah & berterbangan dalam 5 menit.
           </div>
