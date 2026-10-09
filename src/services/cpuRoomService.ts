@@ -31,6 +31,76 @@ export interface CpuSignalData {
   senderId: string;
 }
 
+export interface CpuRoomMeta {
+  roomId: string;
+  roomName: string;
+  isPublic: boolean;
+  colorTheme: string;
+  peerCount: number;
+  currentHost?: string;
+  createdBy?: string;
+  createdAtMillis?: number;
+  lastActivityMillis?: number;
+}
+
+export interface ThemeDef {
+  id: string;
+  name: string;
+  text: string;
+  border: string;
+  bg: string;
+  glow: string;
+  accent: string;
+}
+
+export const COLOR_THEMES: ThemeDef[] = [
+  { id: 'green', name: 'Matrix Green', text: '#39ff14', border: '#1b5e20', bg: '#051407', glow: 'rgba(57, 255, 20, 0.35)', accent: '#72ff59' },
+  { id: 'cyan', name: 'Cyber Cyan', text: '#00f3ff', border: '#005b66', bg: '#02141a', glow: 'rgba(0, 243, 255, 0.35)', accent: '#5eead4' },
+  { id: 'amber', name: 'Phosphor Amber', text: '#ffb000', border: '#7a5200', bg: '#1a1100', glow: 'rgba(255, 176, 0, 0.35)', accent: '#fde047' },
+  { id: 'magenta', name: 'Neon Magenta', text: '#ff007f', border: '#6b0036', bg: '#1a000d', glow: 'rgba(255, 0, 127, 0.35)', accent: '#f472b6' },
+  { id: 'purple', name: 'Electric Violet', text: '#c084fc', border: '#581c87', bg: '#150521', glow: 'rgba(192, 132, 252, 0.35)', accent: '#e879f9' },
+  { id: 'lime', name: 'Acid Lime', text: '#a3e635', border: '#3f6212', bg: '#0f1a02', glow: 'rgba(163, 230, 53, 0.35)', accent: '#bef264' },
+  { id: 'blue', name: 'Deep Sky', text: '#38bdf8', border: '#0369a1', bg: '#031424', glow: 'rgba(56, 189, 248, 0.35)', accent: '#7dd3fc' },
+  { id: 'crimson', name: 'Crimson Leak', text: '#fb7185', border: '#881337', bg: '#1f040c', glow: 'rgba(251, 113, 133, 0.35)', accent: '#fda4af' },
+];
+
+export function getColorTheme(themeId?: string): ThemeDef {
+  return COLOR_THEMES.find((t) => t.id === themeId) || COLOR_THEMES[0];
+}
+
+export function pickRandomColorTheme(): string {
+  const t = COLOR_THEMES[Math.floor(Math.random() * COLOR_THEMES.length)];
+  return t.id;
+}
+
+const ROOM_NAME_PREFIXES = [
+  'Ghibah', 'Spill', 'Gosip', 'Bilik', 'Intel', 'Saksi',
+  'Bisik', 'Bocor', 'Radar', 'Posko', 'Kanal', 'Ruang',
+  'Sarang', 'Markas', 'Bongkar', 'Skandal'
+];
+
+const ROOM_NAME_SUFFIXES = [
+  'Senja', 'Malam', 'Warkop', 'Kantor', 'Kampus', 'Tetangga',
+  'Netizen', 'Rahasia', 'Anonim', 'BawahTanah', 'Undercover',
+  'Misteri', 'Kepo', 'Panas', 'Gelap', 'Viral'
+];
+
+export function generateRandomRoomName(): string {
+  const pref = ROOM_NAME_PREFIXES[Math.floor(Math.random() * ROOM_NAME_PREFIXES.length)];
+  const suff = ROOM_NAME_SUFFIXES[Math.floor(Math.random() * ROOM_NAME_SUFFIXES.length)];
+  const num = Math.floor(100 + Math.random() * 900);
+  return `${pref} ${suff} #${num}`;
+}
+
+export function generateRandomRoomCode(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let res = '';
+  for (let i = 0; i < 6; i++) {
+    res += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return res;
+}
+
 /**
  * Membersihkan kode ruang dengan mempertahankan huruf besar dan kecil (case-sensitive).
  * Karakter yang diizinkan: huruf besar A-Z, huruf kecil a-z, angka 0-9, dash (-), dan underscore (_).
@@ -145,8 +215,13 @@ export async function updateCpuRoomHost(roomId: string, newHostPeerId: string): 
  */
 export async function createCpuRoom(
   roomId: string,
-  hostPeerId: string
-): Promise<{ success: boolean; alreadyExists?: boolean; error?: string }> {
+  hostPeerId: string,
+  options?: {
+    roomName?: string;
+    isPublic?: boolean;
+    colorTheme?: string;
+  }
+): Promise<{ success: boolean; alreadyExists?: boolean; error?: string; roomName?: string; isPublic?: boolean; colorTheme?: string }> {
   const cleanId = sanitizeRoomCode(roomId.trim());
   if (!cleanId) return { success: false, error: 'Kode ruang tidak boleh kosong.' };
   const roomRef = doc(db, 'cpuRooms', cleanId);
@@ -180,19 +255,125 @@ export async function createCpuRoom(
       // Jika ruangan lama sudah kosong/mati, kita timpa sebagai ruangan baru
     }
 
+    const assignedRoomName = options?.roomName || generateRandomRoomName();
+    const assignedTheme = options?.colorTheme || pickRandomColorTheme();
+    const isPublic = options?.isPublic !== undefined ? options.isPublic : false;
+
     await setDoc(roomRef, {
       roomId: cleanId,
+      roomName: assignedRoomName,
+      isPublic: isPublic,
+      colorTheme: assignedTheme,
+      peerCount: 1,
       createdBy: hostPeerId,
       currentHost: hostPeerId,
       createdAt: serverTimestamp(),
       lastActivity: serverTimestamp(),
     });
 
-    return { success: true };
+    return {
+      success: true,
+      roomName: assignedRoomName,
+      isPublic: isPublic,
+      colorTheme: assignedTheme,
+    };
   } catch (err: any) {
     handleFsError(err, 'create', `cpuRooms/${cleanId}`);
     return { success: false, error: err?.message || 'Gagal membuat ruang di server.' };
   }
+}
+
+/**
+ * Update room public/private status and room name
+ */
+export async function updateCpuRoomSettings(
+  roomId: string,
+  settings: {
+    roomName?: string;
+    isPublic?: boolean;
+    colorTheme?: string;
+  }
+): Promise<void> {
+  const cleanId = sanitizeRoomCode(roomId.trim());
+  if (!cleanId) return;
+  const roomRef = doc(db, 'cpuRooms', cleanId);
+  try {
+    const updateData: any = {
+      lastActivity: serverTimestamp(),
+    };
+    if (settings.roomName !== undefined) updateData.roomName = settings.roomName.trim().slice(0, 64);
+    if (settings.isPublic !== undefined) updateData.isPublic = settings.isPublic;
+    if (settings.colorTheme !== undefined) updateData.colorTheme = settings.colorTheme;
+    await updateDoc(roomRef, updateData);
+  } catch (err) {
+    handleFsError(err, 'updateSettings', `cpuRooms/${cleanId}`);
+  }
+}
+
+/**
+ * Update online peer count on the room document for real-time lobby counter
+ */
+export async function updateCpuRoomPeerCount(roomId: string, count: number): Promise<void> {
+  const cleanId = sanitizeRoomCode(roomId.trim());
+  if (!cleanId) return;
+  const roomRef = doc(db, 'cpuRooms', cleanId);
+  try {
+    await updateDoc(roomRef, {
+      peerCount: count,
+      lastActivity: serverTimestamp(),
+    });
+  } catch {}
+}
+
+/**
+ * Subscribe to active online rooms for home lobby screen
+ */
+export function subscribeToActiveCpuRooms(callback: (rooms: CpuRoomMeta[]) => void): () => void {
+  const roomsColl = collection(db, 'cpuRooms');
+  return onSnapshot(
+    roomsColl,
+    (snapshot) => {
+      const now = Date.now();
+      const rooms: CpuRoomMeta[] = [];
+
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const lastActMillis = data.lastActivity?.toMillis
+          ? data.lastActivity.toMillis()
+          : data.createdAt?.toMillis
+          ? data.createdAt.toMillis()
+          : now;
+        const createdAtMillis = data.createdAt?.toMillis ? data.createdAt.toMillis() : now;
+
+        // Ruangan aktif jika ada aktivitas dalam 3 menit terakhir
+        // (atau jika baru dibuat kurang dari 2 menit lalu)
+        const isFresh = now - lastActMillis <= 180000 || now - createdAtMillis <= 120000;
+        if (!isFresh) {
+          return;
+        }
+
+        rooms.push({
+          roomId: data.roomId || docSnap.id,
+          roomName: data.roomName || `Ruang ${data.roomId || docSnap.id}`,
+          isPublic: data.isPublic !== undefined ? Boolean(data.isPublic) : true,
+          colorTheme: data.colorTheme || 'green',
+          peerCount: typeof data.peerCount === 'number' && data.peerCount > 0 ? data.peerCount : 1,
+          currentHost: data.currentHost,
+          createdBy: data.createdBy,
+          createdAtMillis,
+          lastActivityMillis: lastActMillis,
+        });
+      });
+
+      // Urutkan berdasarkan lastActivity terbaru
+      rooms.sort((a, b) => (b.lastActivityMillis || 0) - (a.lastActivityMillis || 0));
+      callback(rooms);
+    },
+    (err) => {
+      handleFsError(err, 'list', 'cpuRooms');
+      callback([]);
+    }
+  );
 }
 
 /**
@@ -395,7 +576,7 @@ export async function cleanOldMessagesInRoom(roomId: string): Promise<void> {
 }
 
 /**
- * Subscribe to real-time room events (messages, signals, peers, and host succession)
+ * Subscribe to real-time room events (messages, signals, peers, room settings, and host succession)
  */
 export function subscribeToCpuRoom(
   roomId: string,
@@ -403,7 +584,8 @@ export function subscribeToCpuRoom(
   onMessage: (msg: CpuMsgData, isMine: boolean) => void,
   onSignal: (sig: CpuSignalData) => void,
   onPeerCount: (count: number) => void,
-  onHostSuccession?: (isHost: boolean, hostPeerId: string, hostAlias: string, wasPromoted: boolean) => void
+  onHostSuccession?: (isHost: boolean, hostPeerId: string, hostAlias: string, wasPromoted: boolean) => void,
+  onRoomMeta?: (meta: { roomName: string; isPublic: boolean; colorTheme: string }) => void
 ): () => void {
   const cleanId = sanitizeRoomCode(roomId.trim());
   const joinTimestamp = Date.now();
@@ -411,7 +593,7 @@ export function subscribeToCpuRoom(
   let currentHostId: string | null = null;
   let initialHostCheckDone = false;
 
-  // 1. Subscribe to room doc to track current host
+  // 1. Subscribe to room doc to track current host & room metadata (name, public/private, theme)
   const roomRef = doc(db, 'cpuRooms', cleanId);
   const unsubRoom = onSnapshot(
     roomRef,
@@ -419,6 +601,13 @@ export function subscribeToCpuRoom(
       if (roomSnap.exists()) {
         const rData = roomSnap.data();
         currentHostId = rData?.currentHost || rData?.createdBy || null;
+        if (onRoomMeta) {
+          onRoomMeta({
+            roomName: rData?.roomName || `Ruang ${cleanId}`,
+            isPublic: rData?.isPublic !== undefined ? Boolean(rData.isPublic) : true,
+            colorTheme: rData?.colorTheme || 'green',
+          });
+        }
       }
     },
     (err) => {
@@ -524,7 +713,11 @@ export function subscribeToCpuRoom(
         }
       });
 
-      onPeerCount(Math.max(1, activePeers.length));
+      const peerTotal = Math.max(1, activePeers.length);
+      onPeerCount(peerTotal);
+      if (currentHostId === myPeerId || (activePeers.length > 0 && activePeers[0].peerId === myPeerId)) {
+        updateCpuRoomPeerCount(cleanId, peerTotal).catch(() => {});
+      }
 
       // Urutkan peer berdasarkan waktu gabung (joinedAt) paling awal:
       // Index 0 = Anggota tertua di ruangan saat ini

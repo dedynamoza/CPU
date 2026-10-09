@@ -718,3 +718,257 @@ input::placeholder {
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100%); }
 }
+
+/* LIVE ROOMS RADAR / LOBBY */
+.radar-box {
+  margin-top: 24px;
+  border: 2px solid var(--dim);
+  background: rgba(3, 15, 6, 0.7);
+  padding: 12px 16px;
+  position: relative;
+  box-shadow: 0 0 16px rgba(0, 0, 0, 0.7);
+}
+
+.radar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed var(--dim);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+  font-size: 19px;
+  letter-spacing: 0.5px;
+}
+
+/* ROOM CODE COLUMN IN CHAT HEADER */
+.room-code-column {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding-right: 8px;
+  border-right: 1px dashed currentColor;
+}
+
+.room-code-label {
+  font-weight: bold;
+  font-size: 17px;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.copy-code-sub-btn {
+  font-size: 11px !important;
+  line-height: 1.1 !important;
+  padding: 1px 6px !important;
+  background: var(--bg) !important;
+  color: var(--fg) !important;
+  border: 1px solid var(--bg) !important;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: all 0.15s ease;
+  font-family: inherit;
+  font-weight: bold;
+}
+
+.copy-code-sub-btn:hover {
+  background: transparent !important;
+  color: var(--bg) !important;
+  border: 1px dashed var(--bg) !important;
+}
+
+/* RETRO CYBER SLIDE BUTTON FOR PRIVACY (PUBLIK / PRIVAT) - TANPA ICON GEMBOK */
+.privacy-slider-wrap {
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+.privacy-slide-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 132px;
+  height: 26px;
+  background: var(--bg);
+  border: 1px solid var(--bg);
+  box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.8);
+  cursor: pointer;
+  padding: 2px;
+  box-sizing: border-box;
+}
+
+.privacy-slide-btn.disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.slide-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 63px;
+  background: var(--fg);
+  box-shadow: 0 0 8px var(--fg);
+  transition: transform 0.2s cubic-bezier(0.25, 1, 0.5, 1);
+  z-index: 1;
+}
+
+/* Slide kiri untuk Publik */
+.privacy-slide-btn.slide-public .slide-thumb {
+  transform: translateX(0);
+}
+
+/* Slide kanan untuk Privat */
+.privacy-slide-btn.slide-private .slide-thumb {
+  transform: translateX(65px);
+}
+
+.slide-label-side {
+  position: relative;
+  z-index: 2;
+  width: 63px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  line-height: 22px;
+  transition: color 0.18s ease;
+  color: var(--dim);
+}
+
+.privacy-slide-btn.slide-public .slide-label-side:first-child {
+  color: var(--bg);
+  font-weight: 900;
+}
+
+.privacy-slide-btn.slide-private .slide-label-side:last-child {
+  color: var(--bg);
+  font-weight: 900;
+}
+
+.live-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 16px;
+  color: var(--fg);
+}
+
+.live-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+  animation: liveBlink 1.4s ease-in-out infinite;
+}
+
+@keyframes liveBlink {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.7); }
+}
+
+.rooms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.room-card {
+  border-width: 2px;
+  border-style: solid;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+  background: rgba(0, 0, 0, 0.6);
+  position: relative;
+  overflow: hidden;
+}
+
+.room-card:hover {
+  transform: translateY(-2px);
+}
+
+.room-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.room-card-title {
+  font-size: 19px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.room-card-code {
+  font-size: 15px;
+  opacity: 0.85;
+  letter-spacing: 1px;
+}
+
+.room-card-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.room-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
+  font-size: 16px;
+}
+
+.room-join-btn {
+  font: inherit;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.15s ease;
+}
+
+.room-join-btn:hover {
+  background: currentColor;
+  color: #000 !important;
+}
+
+/* Modal styling for editing room name */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.modal-box {
+  background: #020a04;
+  border: 3px double var(--fg);
+  box-shadow: 0 0 30px rgba(57, 255, 20, 0.35);
+  max-width: 480px;
+  width: 100%;
+  padding: 18px 20px;
+}

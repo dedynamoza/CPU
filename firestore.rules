@@ -170,29 +170,26 @@ service cloud.firestore {
 
     // CPU DOS ANONYMOUS CHAT ROOMS (NO LOGIN REQUIRED)
     match /cpuRooms/{roomId} {
-      allow get: if isValidId(roomId);
-      allow list: if false;
+      allow get, list: if true;
       allow create: if isValidId(roomId)
         && incoming().roomId == roomId
         && incoming().roomId.size() <= 32
         && incoming().createdAt is timestamp
         && incoming().lastActivity is timestamp
+        && (!('roomName' in incoming()) || (incoming().roomName is string && incoming().roomName.size() <= 64))
+        && (!('isPublic' in incoming()) || incoming().isPublic is bool)
+        && (!('colorTheme' in incoming()) || (incoming().colorTheme is string && incoming().colorTheme.size() <= 32))
+        && (!('peerCount' in incoming()) || (incoming().peerCount is number && incoming().peerCount >= 0 && incoming().peerCount <= 500))
         && (!('createdBy' in incoming()) || (incoming().createdBy is string && incoming().createdBy.size() <= 64))
         && (!('currentHost' in incoming()) || (incoming().currentHost is string && incoming().currentHost.size() <= 64));
       allow update: if isValidId(roomId)
         && incoming().roomId == existing().roomId
         && incoming().lastActivity is timestamp
-        && (
-          // Update host & activity
-          (incoming().diff(existing()).affectedKeys().hasOnly(['currentHost', 'lastActivity'])
-           && incoming().currentHost is string && incoming().currentHost.size() <= 64)
-          ||
-          // Update activity only
-          incoming().diff(existing()).affectedKeys().hasOnly(['lastActivity'])
-          ||
-          // Touch room (refresh)
-          incoming().diff(existing()).affectedKeys().hasOnly(['roomId', 'createdAt', 'lastActivity'])
-        );
+        && (!('roomName' in incoming()) || (incoming().roomName is string && incoming().roomName.size() <= 64))
+        && (!('isPublic' in incoming()) || incoming().isPublic is bool)
+        && (!('colorTheme' in incoming()) || (incoming().colorTheme is string && incoming().colorTheme.size() <= 32))
+        && (!('peerCount' in incoming()) || (incoming().peerCount is number && incoming().peerCount >= 0 && incoming().peerCount <= 500))
+        && (!('currentHost' in incoming()) || (incoming().currentHost is string && incoming().currentHost.size() <= 64));
       allow delete: if isValidId(roomId);
 
       match /messages/{messageId} {

@@ -12,7 +12,15 @@ import {
   cleanOldMessagesInRoom,
   subscribeToCpuRoom,
   sanitizeRoomCode,
+  generateRandomRoomCode,
+  generateRandomRoomName,
+  pickRandomColorTheme,
+  getColorTheme,
+  updateCpuRoomSettings,
+  subscribeToActiveCpuRooms,
+  CpuRoomMeta,
 } from './services/cpuRoomService';
+import { censorAndScrambleText } from './utils/censor';
 
 const ALIASES = [
   'GHIBAH', 'BOCOR', 'SPILLER', 'KUPING', 'TUKANG_GOSIP',
@@ -86,6 +94,12 @@ function enigmaScramble(text: string): string {
 export default function App() {
   const [screen, setScreen] = useState<'home' | 'chat'>('home');
   const [room, setRoom] = useState<string>('');
+  const [roomName, setRoomName] = useState<string>('');
+  const [isPublic, setIsPublic] = useState<boolean>(true);
+  const [colorTheme, setColorTheme] = useState<string>('green');
+  const [activeRooms, setActiveRooms] = useState<CpuRoomMeta[]>([]);
+  const [isRenamingModalOpen, setIsRenamingModalOpen] = useState<boolean>(false);
+  const [newRoomNameInput, setNewRoomNameInput] = useState<string>('');
   const [alias, setAlias] = useState<string>('');
   const [isHost, setIsHost] = useState<boolean>(false);
   const [peerCount, setPeerCount] = useState<number>(1);
@@ -269,6 +283,8 @@ export default function App() {
   const addMsgToDOM = (m: MsgItem, mine: boolean) => {
     const S = stateRef.current;
     if (S.msgs.has(m.id)) return;
+    // Sensor & acak kata-kata kotor secara otomatis (contoh: "kontol" -> "lkonto")
+    m.text = censorAndScrambleText(m.text);
     const now = Date.now();
     m.e = Math.min(m.e, m.c + S.ttl, now + S.ttl);
     if (m.e <= now) return;
@@ -402,7 +418,11 @@ export default function App() {
     }
   };
 
-  const joinRoom = (code: string, creator = false) => {
+  const joinRoom = (
+    code: string,
+    creator = false,
+    initialMeta?: { roomName?: string; isPublic?: boolean; colorTheme?: string }
+  ) => {
     const cleaned = cleanCode(code);
     if (!cleaned) {
       showToastMsg('Isi kode ruang dulu');
@@ -423,13 +443,17 @@ export default function App() {
     setRoom(cleaned);
     setAlias(generatedAlias);
     setIsHost(creator);
+    setRoomName(initialMeta?.roomName || `Ruang #${cleaned}`);
+    setIsPublic(initialMeta?.isPublic !== undefined ? initialMeta.isPublic : false);
+    setColorTheme(initialMeta?.colorTheme || 'green');
     setScreen('chat');
 
     setTimeout(() => {
       if (listRef.current) listRef.current.replaceChildren();
+      const currentDisplayName = initialMeta?.roomName ? `"${initialMeta.roomName}" (${cleaned})` : cleaned;
       addSysMsg(
         '*** Kamu masuk ruang ' +
-          cleaned +
+          currentDisplayName +
           (creator ? ' [PEMBUAT RUANG / HOST]' : '') +
           '. Tidak ada riwayat: kamu hanya melihat pesan yang masuk sekarang. ***'
       );
@@ -457,7 +481,7 @@ export default function App() {
       }, 3500);
       S.fsHbInterval = fsHb;
 
-      // Berlangganan real-time Firestore untuk pesan, sinyal, jumlah pengguna, dan suksesi Host
+      // Berlangganan real-time Firestore untuk pesan, sinyal, jumlah pengguna, suksesi Host, & metadata ruang
       S.unsubFs = subscribeToCpuRoom(
         cleaned,
         S.me,
@@ -510,6 +534,11 @@ export default function App() {
               stateRef.current.isHost = isMeHost;
             }
           }
+        },
+        (meta) => {
+          setRoomName(meta.roomName);
+          setIsPublic(meta.isPublic);
+          setColorTheme(meta.colorTheme);
         }
       );
 
@@ -551,9 +580,18 @@ export default function App() {
     setShowGhostFog(false);
     setHomeError('');
     setIsLoading(false);
+    setCodeInputValue('');
     if (listRef.current) listRef.current.replaceChildren();
     if (!silent) setScreen('home');
   };
+
+  useEffect(() => {
+    // Berlangganan real-time ke ruangan yang sedang aktif untuk radar di halaman awal
+    const unsubRooms = subscribeToActiveCpuRooms((rooms) => {
+      setActiveRooms(rooms);
+    });
+    return () => unsubRooms();
+  }, []);
 
   useEffect(() => {
     // Efek glitch layar selama 2 detik setiap 30 menit (300.000 ms)
@@ -711,10 +749,11 @@ export default function App() {
       if (S.room) sendCpuSignal(S.room, 'ghost', S.me).catch(() => {});
 
       // Kirim pesan yang menyertai /ghost
+      const cleanGhostText = censorAndScrambleText(msgAfterGhost);
       const m: MsgItem = {
         id: S.me + now + Math.random().toString(36).slice(2, 5),
         alias: S.alias,
-        text: msgAfterGhost.slice(0, 280),
+        text: cleanGhostText.slice(0, 280),
         c: now,
         e: now + S.ttl,
         effect: 'normal',
@@ -734,10 +773,11 @@ export default function App() {
       sendBroadcast({ t: 'shake' });
       if (S.room) sendCpuSignal(S.room, 'shake', S.me).catch(() => {});
 
+      const cleanShakeText = censorAndScrambleText(msgAfterShake);
       const m: MsgItem = {
         id: S.me + now + Math.random().toString(36).slice(2, 5),
         alias: S.alias,
-        text: msgAfterShake.slice(0, 280),
+        text: cleanShakeText.slice(0, 280),
         c: now,
         e: now + S.ttl,
         effect: 'normal',
@@ -753,10 +793,11 @@ export default function App() {
         // Jika tidak diikuti pesan, tidak terjadi apa-apa
         return;
       }
+      const cleanSnakeText = censorAndScrambleText(msgAfterSnake);
       const m: MsgItem = {
         id: S.me + now + Math.random().toString(36).slice(2, 5),
         alias: S.alias,
-        text: msgAfterSnake.slice(0, 280),
+        text: cleanSnakeText.slice(0, 280),
         c: now,
         e: now + S.ttl,
         effect: 'snake',
@@ -772,10 +813,11 @@ export default function App() {
         // Jika tidak diikuti pesan, tidak terjadi apa-apa
         return;
       }
+      const cleanBangText = censorAndScrambleText(msgAfterBang);
       const m: MsgItem = {
         id: S.me + now + Math.random().toString(36).slice(2, 5),
         alias: S.alias,
-        text: msgAfterBang.slice(0, 280),
+        text: cleanBangText.slice(0, 280),
         c: now,
         e: now + S.ttl,
         effect: 'bang',
@@ -791,7 +833,8 @@ export default function App() {
         // Jika tidak diikuti pesan, tidak terjadi apa-apa
         return;
       }
-      const scrambled = enigmaScramble(msgAfterEnigma);
+      const cleanEnigmaText = censorAndScrambleText(msgAfterEnigma);
+      const scrambled = enigmaScramble(cleanEnigmaText);
       const m: MsgItem = {
         id: S.me + now + Math.random().toString(36).slice(2, 5),
         alias: S.alias,
@@ -805,10 +848,11 @@ export default function App() {
     }
 
     // 7. PESAN REGULER BIASA
+    const cleanRegularText = censorAndScrambleText(rawInput);
     const m: MsgItem = {
       id: S.me + now + Math.random().toString(36).slice(2, 5),
       alias: S.alias,
-      text: rawInput.slice(0, 280),
+      text: cleanRegularText.slice(0, 280),
       c: now,
       e: now + S.ttl,
       effect: 'normal',
@@ -834,8 +878,8 @@ export default function App() {
     r.dataset.ph = r.dataset.ph === 'amber' ? '' : 'amber';
   };
 
-  const handleJoinExistingRoom = async () => {
-    const raw = codeInputValue.trim();
+  const handleJoinExistingRoom = async (overrideCode?: string) => {
+    const raw = (typeof overrideCode === 'string' ? overrideCode : codeInputValue).trim();
     const cleaned = cleanCode(raw);
     if (!cleaned) {
       setHomeError('[!] ERROR: Masukkan kode ruang terlebih dahulu!');
@@ -856,11 +900,18 @@ export default function App() {
         return;
       }
 
+      // Ambil metadata ruangan jika ada di radar
+      const targetRoom = activeRooms.find((r) => r.roomId === cleaned);
+
       // Ruang ditemukan! Periksa apakah pengguna saat ini adalah pembuat ruangan
       const creatorId = await getRoomCreator(cleaned);
       const isCreator = creatorId === stateRef.current.me;
       setIsLoading(false);
-      joinRoom(cleaned, isCreator);
+      joinRoom(cleaned, isCreator, {
+        roomName: targetRoom?.roomName,
+        isPublic: targetRoom?.isPublic,
+        colorTheme: targetRoom?.colorTheme,
+      });
     } catch (err: any) {
       console.error('Join room error:', err);
       setHomeError(`[!] KESALAHAN SERVER: ${err?.message || 'Gagal memeriksa ruangan'}`);
@@ -874,22 +925,22 @@ export default function App() {
     setIsLoading(true);
 
     try {
-      let codeToUse = cleanCode(codeInputValue.trim());
-      // Jika kolom input kosong, buat kode acak 6 karakter unik
-      if (!codeToUse) {
-        codeToUse = Math.random().toString(36).slice(2, 8);
-        setCodeInputValue(codeToUse);
-      }
+      // ATURAN MUTLAK: Kode ruangan 100% digenerate otomatis saat klik Buat Ruang Baru!
+      // Apapun kata yang diketik di kolom input diabaikan dan langsung dikosongkan.
+      setCodeInputValue('');
 
-      const res = await createCpuRoom(codeToUse, stateRef.current.me);
-      if (res.alreadyExists) {
-        setHomeError(
-          `[!] PERINGATAN: Ruangan "${codeToUse}" sedang aktif digunakan. Klik [ MASUK ] untuk bergabung atau gunakan kode lain.`
-        );
-        showToastMsg(`Ruang "${codeToUse}" sudah ada!`);
-        setIsLoading(false);
-        return;
-      }
+      const generatedCode = generateRandomRoomCode();
+      const generatedName = generateRandomRoomName();
+      const generatedTheme = pickRandomColorTheme();
+
+      // Default visibilitas ke kanan (Privat) sesuai instruksi user
+      const defaultIsPublic = false;
+
+      const res = await createCpuRoom(generatedCode, stateRef.current.me, {
+        roomName: generatedName,
+        isPublic: defaultIsPublic,
+        colorTheme: generatedTheme,
+      });
 
       if (!res.success) {
         setHomeError(`[!] ERROR: ${res.error || 'Gagal membuat ruangan di server.'}`);
@@ -899,14 +950,69 @@ export default function App() {
       }
 
       setIsLoading(false);
-      // Masuk sebagai Host/Pembuat Ruang (bisa /blackhole 3x & /ghost tanpa batas)
-      joinRoom(codeToUse, true);
+      // Masuk sebagai Host/Pembuat Ruang (default Privat ke kanan)
+      joinRoom(generatedCode, true, {
+        roomName: generatedName,
+        isPublic: defaultIsPublic,
+        colorTheme: generatedTheme,
+      });
+      showToastMsg(`Ruang dibuat: [${generatedCode}] "${generatedName}" (🔒 Privat)`);
     } catch (err: any) {
       console.error('Create room error:', err);
       setHomeError(`[!] KESALAHAN: ${err?.message || 'Gagal membuat ruangan'}`);
       showToastMsg('Gagal membuat ruangan');
       setIsLoading(false);
     }
+  };
+
+  const handleSetRoomPrivacy = async (nextPublic: boolean) => {
+    const S = stateRef.current;
+    if (!S.isHost || !S.room) {
+      return;
+    }
+    if (nextPublic === isPublic) return;
+    setIsPublic(nextPublic);
+    await updateCpuRoomSettings(S.room, { isPublic: nextPublic });
+    
+    // Notifikasi langsung muncul di kolom chat tanpa popup toast
+    addSysMsg(
+      `*** HOST mengubah status ruangan menjadi: ${
+        nextPublic
+          ? 'PUBLIK (Bisa dilihat & diklik di halaman awal)'
+          : 'PRIVAT (Hanya orang yang memiliki kode yang bisa masuk)'
+      } ***`
+    );
+  };
+
+  const handleOpenRenameModal = () => {
+    const S = stateRef.current;
+    if (!S.isHost) {
+      showToastMsg('Akses ditolak: Hanya Host yang bisa mengganti nama ruangan!');
+      return;
+    }
+    setNewRoomNameInput(roomName || `Ruang #${S.room}`);
+    setIsRenamingModalOpen(true);
+  };
+
+  const handleSaveRoomName = async () => {
+    const S = stateRef.current;
+    const cleanName = censorAndScrambleText(newRoomNameInput.trim().slice(0, 64));
+    if (!cleanName) {
+      showToastMsg('Nama ruangan tidak boleh kosong');
+      return;
+    }
+    setRoomName(cleanName);
+    setIsRenamingModalOpen(false);
+    if (S.room) {
+      await updateCpuRoomSettings(S.room, { roomName: cleanName });
+      addSysMsg(`*** HOST mengganti nama ruangan menjadi: "${cleanName}" ***`);
+      showToastMsg(`Nama ruangan diperbarui: "${cleanName}"`);
+    }
+  };
+
+  const handleRerollRoomName = () => {
+    const fresh = generateRandomRoomName();
+    setNewRoomNameInput(fresh);
   };
 
   return (
@@ -961,7 +1067,7 @@ export default function App() {
           <button
             className="btn big"
             id="join"
-            onClick={handleJoinExistingRoom}
+            onClick={() => handleJoinExistingRoom()}
             disabled={isLoading}
           >
             {isLoading ? '[ MEMERIKSA... ]' : '[ MASUK ]'}
@@ -981,6 +1087,102 @@ export default function App() {
             {homeError}
           </div>
         )}
+
+        {/* Live Active Online Rooms Radar */}
+        <div className="radar-box">
+          <div className="radar-header">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="live-dot" />
+              <b>{activeRooms.length} ONLINE</b>
+            </div>
+          </div>
+
+          {activeRooms.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '24px 12px', opacity: 0.7, fontSize: '16px', border: '1px dashed var(--dim)' }}>
+              [ RADAR KOSONG: BELUM ADA RUANG ONLINE ]
+              <br />
+              <span style={{ fontSize: '14px', opacity: 0.85, marginTop: '4px', display: 'inline-block' }}>
+                Klik <b>[ BUAT RUANG BARU ]</b> di atas untuk membuat ruang pertama!
+              </span>
+            </div>
+          ) : (
+            <div className="rooms-grid">
+              {activeRooms.map((r) => {
+                const theme = getColorTheme(r.colorTheme);
+                return (
+                  <div
+                    key={r.roomId}
+                    className="room-card"
+                    style={{
+                      borderColor: theme.border,
+                      color: theme.text,
+                      boxShadow: `0 0 14px ${theme.glow}`,
+                      background: theme.bg,
+                    }}
+                    onClick={() => {
+                      if (r.isPublic) {
+                        handleJoinExistingRoom(r.roomId);
+                      } else {
+                        showToastMsg(`Ruang "${r.roomName}" privat 🔒: Minta kode dari Host lalu ketik di kolom KODE RUANG dan klik [ MASUK ]`);
+                      }
+                    }}
+                    title={r.isPublic ? `Klik untuk masuk ke ${r.roomName}` : 'Ruang privat: butuh kode dari Host'}
+                  >
+                    <div className="room-card-head">
+                      <div style={{ overflow: 'hidden' }}>
+                        <div className="room-card-title">{r.roomName}</div>
+                        <div className="room-card-code" style={{ color: theme.accent }}>
+                          {r.isPublic ? `KODE: #${r.roomId}` : 'KODE: 🔒 [BUTUH KODE DARI HOST]'}
+                        </div>
+                      </div>
+                      <div
+                        className="room-card-badge"
+                        style={{
+                          color: r.isPublic ? '#39ff14' : '#ff4444',
+                          borderColor: r.isPublic ? '#1b5e20' : '#881337',
+                          background: r.isPublic ? 'rgba(57,255,20,0.12)' : 'rgba(255,68,68,0.12)',
+                        }}
+                      >
+                        {r.isPublic ? '🔓 PUBLIK' : '🔒 PRIVAT'}
+                      </div>
+                    </div>
+
+                    <div className="room-card-foot">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '15px' }}>
+                        <span className="live-dot" style={{ color: theme.text }} />
+                        <span><b>{r.peerCount}</b> USER ONLINE</span>
+                      </div>
+
+                      {r.isPublic ? (
+                        <button
+                          className="room-join-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleJoinExistingRoom(r.roomId);
+                          }}
+                          disabled={isLoading}
+                        >
+                          [ MASUK ➔ ]
+                        </button>
+                      ) : (
+                        <button
+                          className="room-join-btn"
+                          style={{ opacity: 0.9, borderColor: '#ff4444', color: '#ff4444' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            showToastMsg(`Ruang privat: Minta kode dari Host lalu ketik di atas & klik [ MASUK ]`);
+                          }}
+                        >
+                          [ 🔒 BUTUH KODE ]
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         <div className="foot dim">
           C:\GHIBAH&gt; <span className="cur"></span>
@@ -1006,14 +1208,83 @@ export default function App() {
             </div>
           )}
 
-          <div className="title">
-            <b>
-              RUANG: <span id="rm">{room}</span> | <span id="pn">{peerCount}</span> ONLINE | KAMU:{' '}
-              <span id="al">{alias}</span> {isHost && <span style={{ color: '#fff' }}>[HOST]</span>}
+          <div className="title" style={{ flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+            {/* Kolom Kode Ruang: Tombol Salin Kode Berada Tepat di Bawah Kode Ruangan */}
+            <div className="room-code-column">
+              <div className="room-code-label">
+                RUANG: <span id="rm">#{room}</span>
+              </div>
+              <button
+                className="btn copy-code-sub-btn"
+                id="cp"
+                onClick={handleCopyRoom}
+                title="Salin kode ruangan ke clipboard"
+              >
+                [SALIN KODE]
+              </button>
+            </div>
+
+            <b style={{ flex: 1, minWidth: '180px' }}>
+              &bull; <span style={{ color: '#fff', textShadow: '0 0 8px #fff' }}>"{roomName}"</span>
+              {' '}| <span id="pn">{peerCount}</span> ONLINE | KAMU: <span id="al">{alias}</span> {isHost && <span style={{ color: '#fff' }}>[HOST]</span>}
             </b>
-            <button className="btn" id="cp" onClick={handleCopyRoom} title="Salin kode ruang">
-              [SALIN]
-            </button>
+
+            {/* Slide Button: Publik (Kiri) | Privat (Kanan - Default) Tanpa Icon Gembok */}
+            <div
+              className="privacy-slider-wrap"
+              title={
+                isHost
+                  ? 'Visibilitas Ruang: Geser ke kiri untuk Publik, kanan untuk Privat'
+                  : `Status visibilitas ruang: ${isPublic ? 'Publik' : 'Privat'}`
+              }
+            >
+              <div
+                className={`privacy-slide-btn ${isPublic ? 'slide-public' : 'slide-private'} ${!isHost ? 'disabled' : ''}`}
+                role="button"
+                tabIndex={isHost ? 0 : -1}
+                onClick={() => {
+                  if (isHost) handleSetRoomPrivacy(!isPublic);
+                }}
+                onKeyDown={(e) => {
+                  if (isHost && (e.key === 'Enter' || e.key === ' ')) {
+                    e.preventDefault();
+                    handleSetRoomPrivacy(!isPublic);
+                  }
+                }}
+              >
+                <div
+                  className={`slide-label-side ${isPublic ? 'active' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isHost) handleSetRoomPrivacy(true);
+                  }}
+                >
+                  Publik
+                </div>
+                <div className="slide-thumb" />
+                <div
+                  className={`slide-label-side ${!isPublic ? 'active' : ''}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isHost) handleSetRoomPrivacy(false);
+                  }}
+                >
+                  Privat
+                </div>
+              </div>
+            </div>
+
+            {/* Tombol Kontrol Khusus Host */}
+            {isHost && (
+              <button
+                className="btn"
+                onClick={handleOpenRenameModal}
+                title="Ganti nama ruangan yang tampil di radar"
+              >
+                [ ✎ GANTI NAMA ]
+              </button>
+            )}
+
             <button className="btn" id="out" onClick={() => leaveRoom(false)}>
               [KELUAR]
             </button>
@@ -1040,6 +1311,53 @@ export default function App() {
           </form>
         </div>
       </section>
+
+      {/* Modal Dialog Ganti Nama Ruangan (Host Only) */}
+      {isRenamingModalOpen && (
+        <div className="modal-overlay" onClick={() => setIsRenamingModalOpen(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '10px', borderBottom: '1px dashed var(--dim)', paddingBottom: '6px' }}>
+              ✎ UBAH NAMA RUANGAN (KONTROL HOST)
+            </div>
+            <div style={{ fontSize: '15px', opacity: 0.85, marginBottom: '12px', lineHeight: '1.4' }}>
+              Nama ini akan langsung terlihat oleh semua orang di daftar radar halaman awal:
+            </div>
+            <div style={{ marginBottom: '14px' }}>
+              <input
+                style={{
+                  width: '100%',
+                  background: '#000',
+                  color: 'var(--fg)',
+                  border: '2px solid var(--fg)',
+                  padding: '8px 12px',
+                  fontFamily: 'inherit',
+                  fontSize: '18px',
+                  outline: 'none',
+                }}
+                maxLength={64}
+                value={newRoomNameInput}
+                onChange={(e) => setNewRoomNameInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveRoomName();
+                }}
+                placeholder="Ketik nama ruangan baru..."
+                autoFocus
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button className="btn" onClick={handleRerollRoomName} title="Pilih nama acak keren baru">
+                [ 🎲 ACAK NAMA ]
+              </button>
+              <button className="btn" onClick={() => setIsRenamingModalOpen(false)}>
+                [ BATAL ]
+              </button>
+              <button className="btn big" style={{ fontSize: '18px' }} onClick={handleSaveRoomName}>
+                [ SIMPAN PERUBAHAN ]
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

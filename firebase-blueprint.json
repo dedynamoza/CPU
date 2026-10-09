@@ -274,13 +274,41 @@
     },
     "CpuRoom": {
       "title": "CpuRoom",
-      "description": "Anonymous leak/spill room identified by a code",
+      "description": "Anonymous leak/spill room identified by a code with public/private status and custom theme",
       "type": "object",
       "properties": {
         "roomId": {
           "type": "string",
           "description": "Room code or identifier",
           "maxLength": 32
+        },
+        "roomName": {
+          "type": "string",
+          "description": "Catchy generated or host-customized room name",
+          "maxLength": 64
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Whether room is open to public without typing code"
+        },
+        "colorTheme": {
+          "type": "string",
+          "description": "Neon color theme of room (green, cyan, amber, magenta, lime, purple)",
+          "maxLength": 32
+        },
+        "peerCount": {
+          "type": "number",
+          "description": "Current number of online users in this room"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Peer ID of creator",
+          "maxLength": 64
+        },
+        "currentHost": {
+          "type": "string",
+          "description": "Peer ID of current room host",
+          "maxLength": 64
         },
         "createdAt": {
           "type": "string",
