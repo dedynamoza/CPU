@@ -652,3 +652,69 @@ input::placeholder {
   #crt, .cur, .cd.low { animation: none; }
   .m.dis .ch { animation-duration: .4s !important; }
 }
+
+/* 2-Second Screen Glitch Effect (Setiap 5 Menit) */
+@keyframes screenGlitchAnim {
+  0% {
+    transform: translate(0, 0);
+    filter: none;
+  }
+  10% {
+    transform: translate(-5px, 2px) skewX(1deg);
+    filter: hue-rotate(90deg) contrast(1.4);
+  }
+  20% {
+    transform: translate(6px, -3px) skewX(-2deg);
+    filter: invert(0.12) saturate(2);
+  }
+  35% {
+    transform: translate(-4px, 3px);
+    filter: hue-rotate(180deg);
+  }
+  50% {
+    transform: translate(5px, 1px) skewX(2deg);
+    filter: contrast(2) brightness(1.2);
+  }
+  65% {
+    transform: translate(-7px, -2px) skewX(-1.5deg);
+    filter: hue-rotate(270deg);
+  }
+  80% {
+    transform: translate(6px, 2px);
+    filter: contrast(1.6);
+  }
+  90% {
+    transform: translate(-3px, -1px) skewX(1deg);
+    filter: hue-rotate(45deg);
+  }
+  100% {
+    transform: translate(0, 0);
+    filter: none;
+  }
+}
+
+#crt.glitching {
+  animation: screenGlitchAnim 0.15s steps(2) infinite !important;
+  text-shadow: -3px 0 #ff0055, 3px 0 #00ffff !important;
+}
+
+.glitch-bar-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.12) 0px,
+    rgba(255, 255, 255, 0.12) 3px,
+    transparent 3px,
+    transparent 8px
+  );
+  mix-blend-mode: color-dodge;
+  animation: glitchBarScan 0.35s linear infinite;
+}
+
+@keyframes glitchBarScan {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}

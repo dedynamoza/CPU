@@ -11,10 +11,11 @@ import {
   deleteExpiredMessage,
   cleanOldMessagesInRoom,
   subscribeToCpuRoom,
+  sanitizeRoomCode,
 } from './services/cpuRoomService';
 
 const ALIASES = [
-  'CEPU', 'BOCOR', 'SPILLER', 'KUPING', 'TUKANG_GOSIP',
+  'GHIBAH', 'BOCOR', 'SPILLER', 'KUPING', 'TUKANG_GOSIP',
   'SI_PENDIAM', 'ANON', 'BISIK', 'INTEL', 'SAKSI'
 ];
 
@@ -93,6 +94,7 @@ export default function App() {
   const [toastText, setToastText] = useState<string>('');
   const [showToast, setShowToast] = useState<boolean>(false);
   const [isShaking, setIsShaking] = useState<boolean>(false);
+  const [isGlitching, setIsGlitching] = useState<boolean>(false);
   const [showBlackHole, setShowBlackHole] = useState<boolean>(false);
   const [showGhostFog, setShowGhostFog] = useState<boolean>(false);
   const [homeError, setHomeError] = useState<string>('');
@@ -110,10 +112,11 @@ export default function App() {
     room: string | null;
     alias: string;
     isHost: boolean;
+    joinedAt: number;
     blackholeUses: number;
     ghostUsed: boolean;
     msgs: Map<string, { m: MsgItem; el: HTMLDivElement; cd: HTMLSpanElement; dead: boolean }>;
-    peers: Map<string, number>;
+    peers: Map<string, { lastSeen: number; alias: string; joinedAt: number; isHost: boolean }>;
     timers: any[];
     tickInterval: any;
     lastSendTime: number;
@@ -126,6 +129,7 @@ export default function App() {
     room: null,
     alias: '',
     isHost: false,
+    joinedAt: 0,
     blackholeUses: 0,
     ghostUsed: false,
     msgs: new Map(),
@@ -196,7 +200,7 @@ export default function App() {
     }, 2500);
   };
 
-  const cleanCode = (s: string) => s.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 16);
+  const cleanCode = (s: string) => sanitizeRoomCode(s);
   const pick = <T,>(a: T[]): T => a[Math.floor(Math.random() * a.length)];
   const fmt = (ms: number) => {
     const s = Math.max(0, Math.ceil(ms / 1000));
@@ -359,13 +363,36 @@ export default function App() {
     S.msgs.set(m.id, { m, el: w, cd, dead: false });
   };
 
-  const prunePeers = () => {
+  const prunePeers = (hostDropped = false) => {
     const n = Date.now();
     const S = stateRef.current;
-    for (const [k, t] of S.peers) {
-      if (n - t > 7000) S.peers.delete(k);
+    let anyHostDropped = hostDropped;
+    for (const [k, v] of S.peers) {
+      if (n - v.lastSeen > 8000) {
+        if (v.isHost) anyHostDropped = true;
+        S.peers.delete(k);
+      }
     }
     setPeerCount(S.peers.size + 1);
+
+    // Host succession lokal jika host terputus
+    if (anyHostDropped && !S.isHost && S.room) {
+      const localPeers = [
+        { peerId: S.me, alias: S.alias, joinedAt: S.joinedAt },
+        ...Array.from(S.peers.entries()).map(([k, v]) => ({
+          peerId: k,
+          alias: v.alias,
+          joinedAt: v.joinedAt,
+        })),
+      ];
+      localPeers.sort((a, b) => a.joinedAt - b.joinedAt);
+      if (localPeers.length > 0 && localPeers[0].peerId === S.me) {
+        setIsHost(true);
+        S.isHost = true;
+        addSysMsg('*** HOST TERPUTUS! Kamu sekarang adalah HOST ruangan ini. ***');
+        showToastMsg('👑 Kamu sekarang adalah HOST!');
+      }
+    }
   };
 
   const sendBroadcast = (o: any) => {
@@ -384,14 +411,16 @@ export default function App() {
     leaveRoom(true);
 
     const generatedAlias = pick(ALIASES) + '_' + (100 + Math.floor(Math.random() * 900));
+    const nowJoin = Date.now();
     const S = stateRef.current;
     S.room = cleaned;
     S.alias = generatedAlias;
     S.isHost = creator;
+    S.joinedAt = nowJoin;
     S.blackholeUses = 0;
     S.ghostUsed = false;
 
-    setRoom(cleaned.toUpperCase());
+    setRoom(cleaned);
     setAlias(generatedAlias);
     setIsHost(creator);
     setScreen('chat');
@@ -400,16 +429,16 @@ export default function App() {
       if (listRef.current) listRef.current.replaceChildren();
       addSysMsg(
         '*** Kamu masuk ruang ' +
-          cleaned.toUpperCase() +
+          cleaned +
           (creator ? ' [PEMBUAT RUANG / HOST]' : '') +
           '. Tidak ada riwayat: kamu hanya melihat pesan yang masuk sekarang. ***'
       );
       addSysMsg('!' + (creator ? '' : ''));
       if (inputRef.current) inputRef.current.focus();
 
-      sendBroadcast({ t: 'hi' });
+      sendBroadcast({ t: 'hi', joinedAt: S.joinedAt, isHost: creator });
       const hb = setInterval(() => {
-        sendBroadcast({ t: 'hb' });
+        sendBroadcast({ t: 'hb', joinedAt: S.joinedAt, isHost: stateRef.current.isHost });
         prunePeers();
       }, 2500);
       S.timers.push(hb);
@@ -419,16 +448,16 @@ export default function App() {
       updateCpuRoomActivity(cleaned).catch(() => {});
       cleanOldMessagesInRoom(cleaned).catch(() => {});
 
-      // Heartbeat presence ke Firebase tiap 3.5 detik
-      sendPeerHeartbeat(cleaned, S.me, S.alias).catch(() => {});
+      // Heartbeat presence ke Firebase tiap 3.5 detik dengan joinedAt
+      sendPeerHeartbeat(cleaned, S.me, S.alias, S.joinedAt).catch(() => {});
       const fsHb = setInterval(() => {
         if (stateRef.current.room === cleaned) {
-          sendPeerHeartbeat(cleaned, S.me, S.alias).catch(() => {});
+          sendPeerHeartbeat(cleaned, S.me, S.alias, stateRef.current.joinedAt).catch(() => {});
         }
       }, 3500);
       S.fsHbInterval = fsHb;
 
-      // Berlangganan real-time Firestore untuk pesan, efek/sinyal, dan jumlah pengguna aktif
+      // Berlangganan real-time Firestore untuk pesan, sinyal, jumlah pengguna, dan suksesi Host
       S.unsubFs = subscribeToCpuRoom(
         cleaned,
         S.me,
@@ -461,6 +490,26 @@ export default function App() {
         },
         (onlineCount) => {
           setPeerCount(onlineCount);
+        },
+        (isMeHost, _hostPeerId, hostAlias, wasPromoted) => {
+          if (wasPromoted) {
+            if (isMeHost) {
+              setIsHost(true);
+              stateRef.current.isHost = true;
+              addSysMsg('*** HOST TERPUTUS! Kamu sekarang adalah HOST ruangan ini. (/blackhole & /ghost terbuka!) ***');
+              showToastMsg('👑 Kamu sekarang adalah HOST!');
+            } else {
+              setIsHost(false);
+              stateRef.current.isHost = false;
+              addSysMsg(`*** HOST TERPUTUS! <${hostAlias}> sekarang adalah HOST ruangan ini. ***`);
+              showToastMsg(`👑 <${hostAlias}> sekarang menjadi HOST`);
+            }
+          } else {
+            if (isMeHost !== stateRef.current.isHost) {
+              setIsHost(isMeHost);
+              stateRef.current.isHost = isMeHost;
+            }
+          }
         }
       );
 
@@ -480,7 +529,7 @@ export default function App() {
     }
     if (S.room) {
       removePeerPresence(S.room, S.me).catch(() => {});
-      sendBroadcast({ t: 'bye' });
+      sendBroadcast({ t: 'bye', isHost: S.isHost });
     }
     S.timers.forEach((t) => {
       clearInterval(t);
@@ -493,6 +542,7 @@ export default function App() {
     }
     S.room = null;
     S.isHost = false;
+    S.joinedAt = 0;
     S.blackholeUses = 0;
     S.ghostUsed = false;
     S.msgs.clear();
@@ -506,8 +556,23 @@ export default function App() {
   };
 
   useEffect(() => {
+    // Efek glitch layar selama 2 detik setiap 5 menit (300.000 ms)
+    const GLITCH_INTERVAL = 5 * 60 * 1000;
+    const GLITCH_DURATION = 2000;
+
+    const glitchTimer = setInterval(() => {
+      setIsGlitching(true);
+      setTimeout(() => {
+        setIsGlitching(false);
+      }, GLITCH_DURATION);
+    }, GLITCH_INTERVAL);
+
+    return () => clearInterval(glitchTimer);
+  }, []);
+
+  useEffect(() => {
     if ('BroadcastChannel' in window) {
-      const bc = new BroadcastChannel('cpu-rooms-v1');
+      const bc = new BroadcastChannel('ghibah-rooms-v1');
       stateRef.current.bc = bc;
 
       bc.onmessage = (ev) => {
@@ -515,29 +580,42 @@ export default function App() {
         const S = stateRef.current;
         if (!d || d.from === S.me || !S.room || d.room !== S.room) return;
         if (d.t === 'hi') {
-          S.peers.set(d.from, Date.now());
-          sendBroadcast({ t: 'hb' });
+          S.peers.set(d.from, {
+            lastSeen: Date.now(),
+            alias: d.alias || 'GHIBAH',
+            joinedAt: d.joinedAt || Date.now(),
+            isHost: !!d.isHost,
+          });
+          sendBroadcast({ t: 'hb', joinedAt: S.joinedAt, isHost: S.isHost });
           prunePeers();
         } else if (d.t === 'hb') {
-          S.peers.set(d.from, Date.now());
+          S.peers.set(d.from, {
+            lastSeen: Date.now(),
+            alias: d.alias || 'GHIBAH',
+            joinedAt: d.joinedAt || Date.now(),
+            isHost: !!d.isHost,
+          });
           prunePeers();
         } else if (d.t === 'bye') {
+          const wasHost = !!d.isHost || (S.peers.get(d.from)?.isHost ?? false);
           S.peers.delete(d.from);
-          prunePeers();
+          prunePeers(wasHost);
         } else if (d.t === 'shake') {
-          // Monitor bergetar 1 detik jika pesan /shake diterima
           triggerShake();
           showToastMsg('⚡ Seseorang mengguncang layar! (/SHAKE)');
         } else if (d.t === 'blackhole') {
-          // Semua pesan tersedot ke lubang hitam
           triggerBlackHoleSuction();
           showToastMsg('🕳️ LUBANG HITAM AKTIF: Semua pesan tersedot!');
         } else if (d.t === 'ghost') {
-          // Kabut hijau halus menyelimuti monitor
           triggerGhostFog();
           showToastMsg('🌫️ Kabut halus menyelimuti monitor (/GHOST)');
         } else if (d.t === 'msg' && d.m && typeof d.m.text === 'string') {
-          S.peers.set(d.from, Date.now());
+          S.peers.set(d.from, {
+            lastSeen: Date.now(),
+            alias: d.alias || d.m.alias || 'GHIBAH',
+            joinedAt: d.joinedAt || Date.now(),
+            isHost: !!d.isHost,
+          });
           addMsgToDOM(
             {
               id: String(d.m.id),
@@ -559,7 +637,7 @@ export default function App() {
     document.addEventListener('visibilitychange', onVisChange);
 
     const onPageHide = () => {
-      if (stateRef.current.room) sendBroadcast({ t: 'bye' });
+      if (stateRef.current.room) sendBroadcast({ t: 'bye', isHost: stateRef.current.isHost });
     };
     window.addEventListener('pagehide', onPageHide);
 
@@ -771,9 +849,9 @@ export default function App() {
       const exists = await checkCpuRoomExists(cleaned);
       if (!exists) {
         setHomeError(
-          `[!] ERROR: Ruangan "${cleaned.toUpperCase()}" tidak ditemukan! Pastikan kode ruangan benar atau buat ruangan baru terlebih dahulu.`
+          `[!] ERROR: Ruangan "${cleaned}" tidak ditemukan atau belum dibuat! Pastikan kode ruangan persis sama (huruf besar/kecil berpengaruh) atau buat ruangan baru terlebih dahulu.`
         );
-        showToastMsg(`Ruang "${cleaned.toUpperCase()}" tidak ditemukan!`);
+        showToastMsg(`Ruang "${cleaned}" tidak ditemukan!`);
         setIsLoading(false);
         return;
       }
@@ -806,9 +884,9 @@ export default function App() {
       const res = await createCpuRoom(codeToUse, stateRef.current.me);
       if (res.alreadyExists) {
         setHomeError(
-          `[!] PERINGATAN: Ruangan "${codeToUse.toUpperCase()}" sudah pernah dibuat. Klik [ MASUK ] untuk bergabung.`
+          `[!] PERINGATAN: Ruangan "${codeToUse}" sedang aktif digunakan. Klik [ MASUK ] untuk bergabung atau gunakan kode lain.`
         );
-        showToastMsg(`Ruang "${codeToUse.toUpperCase()}" sudah ada! Klik MASUK.`);
+        showToastMsg(`Ruang "${codeToUse}" sudah ada!`);
         setIsLoading(false);
         return;
       }
@@ -832,15 +910,18 @@ export default function App() {
   };
 
   return (
-    <div id="crt" className={isShaking ? 'shaking' : ''}>
+    <div id="crt" className={`${isShaking ? 'shaking' : ''} ${isGlitching ? 'glitching' : ''}`.trim()}>
       <div id="toast" className={showToast ? 'on' : ''}>
         {toastText}
       </div>
 
+      {/* Screen Glitch Overlay (Setiap 5 Menit selama 2 detik) */}
+      {isGlitching && <div className="glitch-bar-overlay" />}
+
       {/* Ghost Green Fog Overlay */}
       {showGhostFog && <div className="ghost-fog" />}
 
-      {/* Screen: Home (Clean, no text explanation, CPU logo) */}
+      {/* Screen: Home (GHIBAH logo & prompt) */}
       <section className={`screen ${screen === 'home' ? 'on' : ''}`} id="home">
         <pre
           className="logo"
@@ -848,12 +929,12 @@ export default function App() {
           onClick={handleTogglePhosphor}
           title="klik: ganti warna fosfor"
         >
-{` ██████╗ ██████╗ ██╗   ██╗
-██╔════╝ ██╔══██╗██║   ██║
-██║      ██████╔╝██║   ██║
-██║      ██╔═══╝ ██║   ██║
-╚██████╗ ██║     ╚██████╔╝
- ╚═════╝ ╚═╝      ╚═════╝ `}
+{` ██████╗ ██╗  ██╗██╗██████╗  █████╗ ██╗  ██╗
+██╔════╝ ██║  ██║██║██╔══██╗██╔══██╗██║  ██║
+██║  ███╗███████║██║██████╔╝███████║███████║
+██║   ██║██╔══██║██║██╔══██╗██╔══██║██╔══██║
+╚██████╔╝██║  ██║██║██████╔╝██║  ██║██║  ██║
+ ╚═════╝ ╚═╝  ╚═╝╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝`}
         </pre>
 
         <div className="row">
@@ -862,7 +943,7 @@ export default function App() {
             <input
               id="code"
               maxLength={16}
-              placeholder="kantor"
+              placeholder=""
               spellCheck={false}
               autoCapitalize="off"
               autoComplete="off"
@@ -902,7 +983,7 @@ export default function App() {
         )}
 
         <div className="foot dim">
-          C:\CPU&gt; <span className="cur"></span>
+          C:\GHIBAH&gt; <span className="cur"></span>
         </div>
       </section>
 
